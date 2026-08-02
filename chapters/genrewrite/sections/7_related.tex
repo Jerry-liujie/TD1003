@@ -1,0 +1,53 @@
+\vspace{-1mm}
+
+\section{Related Work}
+\label{gen:sec:related}
+
+In this section, we summarize the most relevant related work.
+
+\genhead{Query rewriting} Manual query rewriting does not scale and is prone to error. 
+Much of the work in automated query rewriting is rule-based ~\cite{pirahesh1992extensible,graefe1987rule,ahmed2006cost,levy1994query,muralikrishna1992improved,seshadri1996cost}.  LearnedRewrite~\cite{LR} builds on Calcite’s classic rewrite rules and explores how to find the optimal order of applying rules. \revtwo{More recent systems propose new rewrite rules tailored to analytical workloads~\cite{sarthi2020generalized,blitz2,modi2021new,bruno2022computation}, as discussed in Section ~\ref{gen:sec:expr:llmbaseline}.} The emergence of LLMs has inspired LLM-enhanced rule-based approaches. \rbot~\cite{sun2024r} combines LLMs with evidence retrieval and self-reflection mechanisms to iteratively generate high-quality rewrites.   \textsc{LLM-R\textsuperscript{2}}~\cite{li2024llm} enhances a rule-based query rewriting system by using LLMs to suggest rewrite rules guided by contrastive demonstrations.
+Despite variations in the quality and quantity of their rules,  rule-based techniques are fundamentally incapable of
+optimizing new query patterns that have not been seen before. Though synthesis-based approaches~\cite{dong2023slabcity} are not constrained by rules,  they struggle with complex queries, such as those in the TPC-DS benchmark, which require navigating an enormously large search space. To address these limitations, more recent work has explored rewriting beyond rule-based boundaries by leveraging LLMs more directly. \revone{LITHE~\cite{llm-rw2} prompts an LLM with one selected natural language rule chosen from six handcrafted rewrite rules, each accompanied by an example, to guide the rewrite for a given query. Because this rule set is fixed, LITHE's knowledge cannot grow and evolve with more database feedback over time. QUITE~\cite{song2025quite} models the query rewrite process as a Markov Decision Process and at each timestep it chooses a refinement action (e.g., join reordering, predicate pushdown) by matching the query against a curated knowledge base built from database documentation and community sources. This design constrains the search to known actions and documented heuristics. In contrast, \genrewrite is not restricted to a fixed action library: it can propose novel rewrites and accumulate generalizable rewrite knowledge (NLR2s) over time, including patterns that are not present in existing literature.}
+
+
+% designs a multi-agent framework controlled by a finite state machine to equip LLMs with the ability to enhance the rewriting with real-time database feedback and proposes a hint injection technique to produce better execution plans. In contrast, while \genrewrite also leverages database feedback, it directly guides SQL generation through the use of NLR2s, rather than recommending query hints to refine execution plan.
+ 
+
+
+
+% \footnote{We contacted the authors of QUITE and LITHE to request access to their code. One team has not responded to date, and the other indicated plans to open-source their implementation but has not yet done so. As a result, we were unable to include these systems in our experimental comparison with \genrewrite.}
+
+
+
+% Researchers started to explore the space not covered by rules with the assistance of LLMs. QUITE introduces a training-free, multi-agent LLM-based SQL rewrite system that leverages real-time database feedback, FSM-coordinated agents, rewrite middleware, and hint injection to go beyond fixed rules. LITHE presents an LLM-infused rewrite framework that uses prompt ensembles, database-sensitive rules, and token-probability–guided exploration with logical/statistical safeguards to generate significantly faster SQL rewrites. 
+
+\begin{comment}
+    
+
+\genhead{Text-to-SQL} Text-to-SQL automates the process of generating SQL queries for databases from natural language text, which is crucial to enhance database accessibility without requiring expertise of SQL. 
+This line of research is orthogonal to query rewriting but shares some common challenges, e.g., handling syntactic or semantic errors. It is also a long standing open problem~\cite{green1961baseball}. Earlier techniques are mostly rule-based~\cite{affolter2019comparative,li2018natural}, while more recent methods exploit deep learning solutions and achieve better results~\cite{guo2019towards,kim2020natural,shi2021learning,wang2019rat,wang2020natural,sun2306sql}.
+In short, the main goal in Text-to-SQL is improving user experience while the main goal in query-rewriting is improving query performance.
+
+\end{comment}
+
+\genhead{LLMs in databases} Beyond query rewriting, LLMs support NL2SQL with strong Spider results~\cite{li2023can};  schema matching by inferring column correspondences~\cite{parciak2407schema}; data augmentation with SQLsynth~\cite{tian2025text}; \revthree{equivalence checking via LLM\mbox{-}SQL\mbox{-}Solver with pragmatic “relaxed” equivalence~\cite{zhao2023llm};} tuning/diagnostics via DB\mbox{-}BERT and D\mbox{-}Bot~\cite{trummer2022db,zhou2023d}; and broader DBMS integration for optimization and indexing in DB\mbox{-}GPT~\cite{zhou2023dbgpt}. Collectively, these works position LLMs as versatile assistants across the database stack.
+% LLMs have recently been applied to many database tasks beyond query rewriting.  In NL2SQL, models like Codex and ChatGPT have shown strong performance on benchmarks such as Spider, though challenges remain on complex, real-world schemas~\cite{li2023can}. \revthree{For query equivalence judgment, LLM-SQL-Solver~\cite{zhao2023llm} targets the text-to-SQL setting and introduces ``relaxed'' (pragmatic) equivalence.} In schema matching and data integration, LLMs have been used to infer column correspondences using schema names and descriptions, outperforming traditional string-matching approaches~\cite{parciak2407schema}. For data augmentation, LLMs have been employed to generate synthetic schemas and training pairs, such as in SQLsynth~\cite{tian2025text}, which combines LLMs and human feedback to create high-quality NL-SQL examples. In database tuning and diagnostics, systems like DB-BERT~\cite{trummer2022db} extract configuration hints from documentation to guide knob tuning, while tools like D-Bot~\cite{zhou2023d} use LLMs to identify root causes of performance anomalies. Finally, frameworks such as DB-GPT~\cite{zhou2023dbgpt} aim to integrate LLMs into core DBMS components for tasks like query optimization and index selection, positioning LLMs as a ``brain'' for self-tuning databases. 
+
+
+% These include data cleaning and integration~\cite{narayan2022can,suhara2022annotating}, table processing~\cite{li2023table,lu2024large}, database diagnosis~\cite{zhou2023d}, and root cause analysis~\cite{chen2023automatic}. 
+
+% Specifically, DB‑GPT~\cite{zhou2023dbgpt} is a vision paper that explores the use of LLMs for accomplishing database tasks, with query rewriting being briefly mentioned, however, it primarily focuses on DB-specifc model pre-training and fine-tuning.
+
+\begin{comment}
+    
+
+\genhead{LLM-based query rewriting}
+\genrewrite is the first to study LLMs for query-writing and introduces the notion of 
+natural language rewrite rules (NLR2)---there are recent reports on ArXiv on the use of LLMs for query rewriting~\cite{li2024llm,llm-rw2,sun2024r}, but are all published after
+\genrewrite's original publication on ArXiv~\cite{genrewrite-report}. 
+In particular, LLM-R\textsuperscript{2}~\cite{li2024llm} 
+is an LLM-enhanced query-rewriting system that 
+leverages a high-quality demonstration pool to choose effective rules from a given set of rules. In \S\ref{gen:sec:expr}, we compare \genrewrite against LLM-R\textsuperscript{2}.
+
+\end{comment}

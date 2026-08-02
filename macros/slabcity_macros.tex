@@ -1,0 +1,248 @@
+% ============================================================
+% macros/slabcity_macros.tex -- regenerated from the paper's macros.tex during the
+% dissertation merge. Renamed macros: \tool->\slabcity.
+% Duplicate names shared with earlier-loaded macro files use
+% \renewcommand (definitions are identical).
+% ============================================================
+\newcommand{\queryset}{\widetilde{\query}}
+\newcommand{\query}{Q}
+\newcommand{\inputquery}{\query_{\emph{in}}}
+\newcommand{\outputquery}{\query_{\emph{out}}}
+\renewcommand{\program}{P} % dissertation.cls also defines \program; paper def wins
+\newcommand{\programset}{\widetilde{\program}}
+\newcommand{\target}{t}
+\newcommand{\targetset}{\widetilde{t}}
+\newcommand{\targetlist}{L}
+\newcommand{\targetlistset}{\widetilde{\targetlist}}
+\newcommand{\targetlists}{\widetilde{\targetlist}}
+\newcommand{\cost}{\score}
+\newcommand{\score}{S}
+\newcommand{\costfunction}{\scorefunction}
+\newcommand{\scorefunction}{\emph{score}}
+\newcommand{\dbtable}{T}
+\newcommand{\inputdb}{D}
+\newcommand{\counterexample}{E}
+\newcommand{\counterexamples}{\mathcal{E}}
+\newcommand{\col}{col}
+\newcommand{\cols}{cols}
+\newcommand{\getcols}{\textsc{Columns}}
+\newcommand{\getagg}{\textsc{Agg}}
+\newcommand{\getorderby}{\textsc{orderby}}
+\newcommand{\getpartitionby}{\textsc{partitionby}}
+\newcommand{\colalias}{alias\xspace}
+\newcommand{\agg}{\alpha}
+\newcommand{\windowfunc}{\omega}
+\newcommand{\given}{\mkern2mu | \mkern2mu}
+
+\newcommand{\integrityconstraint}{\phi}
+\newcommand{\dataconstraint}{\integrityconstraint}
+\newcommand{\costmodel}{{C}}
+
+\newcommand{\calcdataflow}[3]{{#1} \vdash {#2}: {#3}}
+\newcommand{\calcdataflowchain}[3]{{#1} \vdash \textsc{Df}{#2} \mkern-3mu : {#3}}
+\newcommand{\calcalldataflowchains}[3]{{#1} \vdash \textsc{AllDfs}{#2} \mkern-3mu : {#3}}
+\newcommand{\dataflowset}{\Delta}
+\newcommand{\dataflowchain}{\delta}
+\newcommand{\flowsto}{\rightarrow}
+\newcommand{\generatecandidate}[1]{\stackrel{{#1}}{\rightsquigarrow}}
+\newcommand{\setprograms}{\textsc{Programs}}
+\newcommand{\setqueries}{\textsc{Queries}}
+\newcommand{\settargetlists}{\textsc{TargetLists}}
+\newcommand{\settargets}{\textsc{Targets}}
+\newcommand{\setexpressions}{\textsc{Expressions}}
+\newcommand{\setcolumns}{\textsc{Cols}}
+\newcommand{\setconditions}{\textsc{Conditions}}
+\newcommand{\setwhereconditions}{\textsc{WhereConds}}
+\newcommand{\sethavingconditions}{\textsc{HavingConds}}
+\newcommand{\setjoinconditions}{\textsc{JoinConds}}
+\newcommand{\setgroupbycolumns}{\textsc{GroupByCols}}
+\newcommand{\setorderbycolumns}{\textsc{OrderByCols}}
+
+% SQL language 
+\newcommand{\sqlspace}{\;}
+\newcommand{\sqldistinct}{\textbf{\texttt{DISTINCT}}\xspace}
+\newcommand{\sqlselect}{\textbf{\texttt{SELECT}}\xspace\xspace}
+\newcommand{\sqlfrom}{\textbf{\texttt{FROM}}\xspace\xspace}
+\newcommand{\sqlwhere}{\textbf{\texttt{WHERE}}\xspace\xspace}
+\newcommand{\whereclause}{\textbf{\texttt{WHERE}}\xspace}
+\newcommand{\sqlgroupby}{\textbf{\texttt{GROUP}}\sqlspace\textbf{\texttt{BY}}\xspace}
+\newcommand{\sqlhaving}{\textbf{\texttt{HAVING}}\xspace\xspace}
+\newcommand{\sqlorderby}{\textbf{\texttt{ORDER}}\sqlspace\textbf{\texttt{BY}}\xspace\xspace}
+\newcommand{\sqlover}{\textbf{\texttt{OVER}}\xspace\xspace}
+\newcommand{\sqlpartitionby}{\textbf{\texttt{PARTITION}}\sqlspace\textbf{\texttt{BY}}\xspace\xspace}
+\newcommand{\sqljoin}{\textbf{\texttt{JOIN}}\xspace\xspace}
+\newcommand{\sqlfulljoin}{\textbf{\texttt{FULL JOIN}}\xspace\xspace}
+\newcommand{\sqlinnerjoin}{\textbf{\texttt{INNER}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}
+\newcommand{\sqlleftjoin}{\textbf{\texttt{LEFT}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}
+\newcommand{\sqlrightjoin}{\textbf{\texttt{RIGHT}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}
+\newcommand{\sqlon}{\textbf{\texttt{ON}}\xspace\xspace}
+\newcommand{\sqlas}{\textbf{\texttt{AS}}\xspace\xspace}
+\newcommand{\sqlmax}{\textbf{\texttt{MAX}}\xspace\xspace}
+\newcommand{\sqlmin}{\textbf{\texttt{MIN}}\xspace\xspace}
+\newcommand{\sqlcount}{\textbf{\texttt{COUNT}}\xspace\xspace}
+\newcommand{\sqlsum}{\textbf{\texttt{SUM}}\xspace\xspace}
+\newcommand{\sqlavg}{\textbf{\texttt{AVG}}\xspace\xspace}
+\newcommand{\sqlrank}{\textbf{\texttt{RANK}}\xspace\xspace}
+\newcommand{\sqldenserank}{\textbf{\texttt{DENSE\_RANK}}\xspace\xspace}
+\newcommand{\sqlunionall}{\textbf{\texttt{UNION ALL}}\xspace\xspace}
+
+% SQL language with color
+\newcommand{\sqlspacecolor}{{\color{black}{{\;}}}}
+\newcommand{\sqldistinctcolor}{{\color{black}{{\textbf{\texttt{DISTINCT}}\xspace\xspace}}}}
+\newcommand{\sqlcoalescecolor}{{\color{black}{{\textbf{\texttt{COALESCE}}\xspace\xspace}}}}
+\newcommand{\sqlselectcolor}{{\color{black}{{\textbf{\texttt{SELECT}}\xspace\xspace}}}}
+\newcommand{\sqlfromcolor}{{\color{black}{{\textbf{\texttt{FROM}}\xspace\xspace}}}}
+\newcommand{\sqlwherecolor}{{\color{black}{{\textbf{\texttt{WHERE}}\xspace\xspace}}}}
+\newcommand{\whereclausecolor}{{\color{black}{{\textbf{\texttt{WHERE}}\xspace}}}}
+\newcommand{\sqlgroupbycolor}{{\color{black}{{\textbf{\texttt{GROUP}}\sqlspace\textbf{\texttt{BY}}}\xspace}}}
+\newcommand{\sqlhavingcolor}{{\color{black}{{\textbf{\texttt{HAVING}}\xspace\xspace}}}}
+\newcommand{\sqlorderbycolor}{{\color{black}{{\textbf{\texttt{ORDER}}\sqlspace\textbf{\texttt{BY}}\xspace\xspace}}}}
+\newcommand{\sqlovercolor}{{\color{black}{{\textbf{\textbf{\texttt{OVER}}}\xspace\xspace}}}}
+\newcommand{\sqlpartitionbycolor}{{\color{black}{{\textbf{\texttt{PARTITION}}\sqlspace{\textbf{\texttt{BY}}}\xspace\xspace}}}}
+\newcommand{\sqljoincolor}{{\color{black}{{\textbf{\texttt{JOIN}}\xspace\xspace}}}}
+\newcommand{\sqlfulljoincolor}{{\color{black}{{\textbf{\texttt{FULL JOIN}}\xspace\xspace}}}}
+\newcommand{\sqlinnerjoincolor}{{\color{black}{{\textbf{\texttt{INNER}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}}}}
+\newcommand{\sqlleftjoincolor}{{\color{black}{{\textbf{\texttt{LEFT}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}}}}
+\newcommand{\sqlrightjoincolor}{{\color{black}{{\textbf{\texttt{RIGHT}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}}}}
+\newcommand{\sqloncolor}{{\color{black}{{\textbf{\texttt{ON}}\xspace\xspace}}}}
+\newcommand{\sqlascolor}{{\color{black}{{\textbf{\texttt{AS}}\xspace\xspace}}}}
+\newcommand{\sqlandcolor}{{\color{black}{{\textbf{\texttt{AND}}\xspace\xspace}}}}
+\newcommand{\sqlmaxcolor}{{\color{black}{{\textbf{\texttt{MAX}}\xspace\xspace}}}}
+\newcommand{\sqlmincolor}{{\color{black}{{\textbf{\texttt{MIN}}\xspace\xspace}}}}
+\newcommand{\sqlcountcolor}{{\color{black}{{\textbf{\texttt{COUNT}}\xspace\xspace}}}}
+\newcommand{\sqlsumcolor}{{\color{black}{{\textbf{\texttt{SUM}}\xspace\xspace}}}}
+\newcommand{\sqlavgcolor}{{\color{black}{{\textbf{\texttt{AVG}}\xspace\xspace}}}}
+\newcommand{\sqlrankcolor}{{\color{black}{{\textbf{\texttt{RANK}}\xspace}}}}
+\newcommand{\sqldenserankcolor}{{\color{black}{{\textbf{\texttt{DENSE\_RANK}}\xspace}}}}
+\newcommand{\sqlunionallcolor}{{\color{black}{{\textbf{\texttt{UNION ALL}}\xspace\xspace}}}}
+
+
+
+\newcommand{\sqlpredicate}{\psi}
+\newcommand{\sqlcondition}{\sqlpredicate}
+\newcommand{\sqlconditionset}{\widetilde{\sqlpredicate}}
+\newcommand{\sqltable}{\dbtable}
+\newcommand{\sqlgroupbyclause}{G}
+\newcommand{\sqlorderbyclause}{O}
+\newcommand{\sqlexpr}{E}
+\newcommand{\sqlexprset}{\widetilde{\sqlexpr}}
+
+
+
+% Algorithm 
+\newcommand{\gentargetlists}[2]{#1 \vdash #2 }
+
+
+
+
+\newcommand{\mydots}{\cdots}
+\newcommand{\para}[1]{\emph{\textbf{#1.}}}
+\newcommand{\assign}{:=}
+\newcommand{\grammareq}{::=}
+
+
+
+
+
+\newcommand{\slabcity}{\textsc{SlabCity}\xspace}
+\newcommand{\SC}{\texttt{SC}\xspace}
+\newcommand{\toolname}{\textsc{SlabCity}\xspace}
+\newcommand{\sia}{\text{Sia}\xspace}
+\newcommand{\wetune}{\textsc{WeTune}\xspace}
+\newcommand{\WT}{\texttt{WT}\xspace}
+\newcommand{\spes}{\textsc{SPES}\xspace}
+\newcommand{\cosette}{\textsc{Cosette}\xspace}
+\newcommand{\learnedrewrite}{\texttt{LearnedRewrite}\xspace}
+\newcommand{\LR}{\texttt{LR}\xspace}
+\newcommand{\GT}{\texttt{MO}\xspace}
+\newcommand{\calcite}{Calcite\xspace}
+\newcommand{\leetcode}{LeetCode\xspace}
+
+
+
+
+
+
+
+
+
+\newcommand{\todo}[1]{{\color{red}{{#1}}}}
+\newcommand{\tofix}[1]{{\color{red}{{#1}}}}
+
+\newcommand{\barzan}[1]{{\color{red}{\textbf{BM: #1}}}}
+
+%\newcommand{\cancut}[1]{{\color{pink}{#1}}}
+\newcommand{\cancut}[1]{{{#1}}}
+
+
+\newcommand{\xinyu}[1]{{\color{green}{\textbf{XW: #1}}}}
+
+\newcommand{\rui}[1]{{\color{cyan}{\textbf{Rui: #1}}}}
+
+\newcommand{\ruiremove}[1]{{\color{red}{\textbf{Rui(remove): #1}}}}
+
+\newcommand{\ruiadd}[1]{{\color{teal}{\textbf{Rui(add): #1}}}}
+
+\newcommand{\jie}[1]{{\color{orange}{\textbf{Jie: #1}}}}
+
+\newcommand{\yuxuan}[1]{{\color{pink}{\textbf{Yuxuan: #1}}}}
+
+\newcommand{\congyan}[1]{{\color{orange}{\textbf{Cong: #1}}}}
+
+\newcommand{\head}[1]{{{\vspace*{1mm} \noindent \textbf{#1.}}}}
+
+\newcommand{\myprocedure}[2]{
+\Statex{\hspace{-14pt} {\bf procedure} \textsc{#1} (#2)}
+}
+
+\algnewcommand\Input{\hspace{-12pt}\textbf{input: }}
+\algnewcommand\Output{\hspace{-12pt}\textbf{output: }}
+\algrenewcommand\algorithmicindent{1em}
+
+\newcommand{\showmycounter}[1]{\stepcounter{#1}\themycounter}
+\newcommand{\resetmycounter}[1]{\setcounter{#1}{0}}
+\newcommand{\irule}[2]{
+\mkern-2mu\displaystyle\frac{\begin{array}{c}#1\end{array}}{\vphantom{,}\begin{array}{c}#2\end{array}\mkern-2mu}}
+\newenvironment{centermath}{\begin{center}$\displaystyle}{$\end{center}}
+
+
+\crefformat{section}{Section \S#2#1#3}
+\crefformat{subsection}{Section \S#2#1#3}
+\crefformat{subsubsection}{Section \S#2#1#3}
+
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\ding{55}}
+
+\newcommand{\evalfinding}[1]{
+\vspace{1pt}
+\begin{center}
+\fcolorbox{black}{white}{\parbox{.96\linewidth}{
+{#1}
+}}
+\vspace{1pt}
+\end{center}
+}
+
+\newcommand{\doubleprime}{'\mkern-2mu'}
+\newcommand{\vs}{\vspace{-2em}}
+
+\newcolumntype{R}[1]{>{\raggedleft\let\newline\\\arraybackslash\hspace{0pt}}m{#1}}
+
+
+
+
+
+
+\newcommand{\xinyurevision}[1]{{\color{blue}{{#1}}}}
+\newcommand{\barzanrev}[1]{{{{#1}}}}
+\newcommand{\finalized}[1]{{{\color{orange}{{#1}}}}}
+\newcommand{\revisioncancut}[1]{{\color{orange}{{}}}}
+
+\newcommand{\jierevision}[1]{{\color{cyan}{{#1}}}}
+\newcommand{\ruirevision}[1]{{\color{red}{{#1}}}}
+\newcommand{\ruirevisiontbd}[1]{{\color{gray}{{#1}}}}
+
+%%Rui's macros for appendix
+\newcommand{\groupbyset}{\widetilde{\mathcal{G}}}
+\newcommand{\partitionbyset}{\widetilde{\mathcal{P}}}
+\newcommand{\orderbyset}{\widetilde{\mathcal{O}}}

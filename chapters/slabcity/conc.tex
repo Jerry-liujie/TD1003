@@ -1,0 +1,27 @@
+\section{Conclusion and Future Work}
+\label{slab:sec:conc}
+
+
+
+In this work, we presented \slabcity, the first {synthesis-based query rewriting technique that is capable of \emph{whole-query} optimization without requiring rewrite rules.} 
+$\slabcity$ is not restricted to a given set of rewrite rules, and therefore is able to explore a larger space of candidate queries for more fruitful optimizations. 
+In particular, our evaluation shows that, not only can \toolname  optimize many more (up to 1.7x more) queries than state-of-the-art query rewriters, but it also generates more interesting queries that are significantly faster (by up to 4 orders of magnitude). 
+
+
+\barzanrev{We believe our general framework of using dataflows to synthesize rewrites is applicable to discovering rewrite rules as well akin to $\wetune$~\cite{wetune}. Specifically, given a query $\inputquery$ with an integrity constraint $\dataconstraint$, one can first use $\toolname$ to obtain a faster query $\query$. Then, this specific transformation $\inputquery \rightarrow_{\dataconstraint} \query$ can be generalized to a pattern $T_{\emph{in}} \rightarrow_{\psi} T$ where $T_{\emph{in}}$ and $T$ are query templates and $\psi$ is a more general constraint such that this more general transformation still preserves equivalence. One can leverage the verifier in $\wetune$ to check equivalence of $T_{\emph{in}}$ and $T$ under $\psi$. 
+}
+
+\barzanrev{
+We also note that query rewriting is orthogonal to traditional query optimization and query tuning techniques, and thus, 
+\slabcity can be leveraged alongside such techniques. 
+% In fact, the manual efforts put into query tuning can be directed to optimizing the rewritten query's plan rather than the original query’s plan. This is because the former is more likely to be amenable to query tuning: 
+ In general, given the same amount of time and engineering resources, it should be easier to tune a rewritten query than the original one since the query optimizer starts with a more optimal query plan than it would with a poorly expressed query. 
+   In other words, the set of query plans that can be uncovered with traditional query optimization techniques is heavily limited by the starting query, which is the main reason query rewriting techniques have been a subject of much research in the field. However, a more comprehensive study to quantify the impact of better query rewriting on the effectiveness of traditional query tuning will make for an interesting future work. 
+}
+
+
+\begin{comment}
+\xinyurevision{Finally, readers may  have noticed that our query syntax (from Figure~\ref{slab:fig:querysyntax}) does not include the logical negation operation. This is simply because in our benchmarks, it is not used as frequently as other operators, and therefore not included. However, supporting negation is quite straightforward: we only need to make a couple of changes to our implementation such as extending our parser and adding a rule to compute the dataflow for negation. Our framework would remain the same. This is also true for adding other operators. }
+\end{comment}
+
+

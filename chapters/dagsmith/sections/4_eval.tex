@@ -1,0 +1,383 @@
+\section{Evaluation}
+\label{dag:sec:eval}
+
+We evaluate \dagsmith{} on real dbt projects, organized around three questions:
+\begin{enumerate}
+    \item How does \dagsmith{} compare to existing baselines for SQL pipeline optimization, and what classes of optimization account for the gap?
+    \item How much does each component of \dagsmith{}'s architecture contribute to the overall gain? We ablate the three  implementation dimensions  (refactoring, materialization, and frequency) and the dataflow-driven targeting that feeds the LLM stage.
+    \item Is the underlying machinery sound and affordable? We measure  the effectiveness of the equivalence-verification loop at catching unsafe rewrites, the LLM cost of running the system end-to-end, and the accuracy of the cost model that drives materialization decisions.
+\end{enumerate}
+
+\head{Summary of results}
+On the open-source Tuva and Stripe dbt projects, \dagsmith{} reduces BigQuery slot-time, the unit billed under capacity pricing, by 51.1\% and 47.4\% to build the pipeline once, and by 67.7\% and 54.8\% in recurring cost averaged across three representative refresh schedules per project. Both figures beat the strongest baseline by a wide margin (on Tuva, 67.7\% against its 37.9\% recurring-cost reduction), because \dagsmith{} reaches cross-model refactoring, materialization revision, and frequency-aware rescheduling that single-query and syntactic cross-model rewriters cannot. An ablation confirms the three  implementation dimensions are complementary, and that dataflow-guided targeting spends a fixed LLM budget more effectively than random subgraph selection (51.1\% vs.\ 43.1\% single-run). 
+The supporting machinery is sound and affordable (Section 4.4): the verification loop reliably rejects unsafe rewrites, the LLM cost is paid once and amortized over many runs, and the learned cost model is accurate enough for the decisions it drives.
+
+
+
+
+\subsection{Experimental Setup}
+\label{dag:sec:eval-setup}
+
+
+
+
+\head{Workloads}
+We evaluate on two real dbt projects. \emph{Tuva} is an open-source dbt package for healthcare data transformation. The full project comprises 842 SQL models organized across 17 modules. We use the claims preprocessing module, which contains 255 models (about 30\% of the project) and is the subset whose models exhibit substantial computational complexity. We run it on a synthetic patient population of 10K, with the largest source table at 505\,MB. \emph{Stripe} is a payments-analytics project of 65 models, already factored by hand into intermediate stages so that the easy syntactic wins have been taken. We run it with the largest source table at 199\,MB. The two projects together cover the range we want to evaluate: a large project that has accumulated cross-model patterns from multiple analysts, and a smaller, already-factored project where remaining gains must come from materialization, frequency, or semantic restructuring beyond syntactic deduplication.
+
+\head{Testbed}
+Experiments run on BigQuery with a 100-slot reservation on the Standard edition under capacity-based pricing.
+\dagsmith{} is not specific to BigQuery: it optimizes SQL pipelines in general, and we use BigQuery because our open-source workloads are built on them. We report slot-time as the primary cost metric, since it is the billing unit under capacity pricing, and elapsed time as a secondary latency metric. Each reported number is the median of three runs. Every LLM call in \dagsmith{} uses OpenAI's GPT-5.4. To simulate realistic production schedules, we use three frequency profiles per project that assign root and leaf models to hourly, daily, or weekly cadences, with interior models derived by propagation. Within the root and leaf sets, cadences are assigned at random, with
+leaves skewed faster than roots, mirroring production schedules, which
+are driven by consumer demand at the sinks rather than the true update
+rate at the sources. This mismatch is exactly what the frequency
+dimension exploits. Table~\ref{dag:tab:freq-profiles} summarizes the average cadence mix per project; all frequency-weighted results in this section are averaged across the three profiles.
+
+% \begin{table}[tb]
+% \centering
+% \caption{Frequency profiles. Each row is the fraction of root and leaf models at each cadence.}
+% \label{dag:tab:freq-profiles}
+% \small
+% \begin{tabular}{llrrrrrr}
+% \toprule
+% & & \multicolumn{3}{c}{Roots} & \multicolumn{3}{c}{Leaves} \\
+% \cmidrule(lr){3-5} \cmidrule(lr){6-8}
+% Project & Profile & wk & day & hr & wk & day & hr \\
+% \midrule
+% \multirow{4}{*}{Tuva}
+% & batch-heavy        & 0.07 & 0.71 & 0.21 & 0.05 & 0.15 & 0.80 \\
+% & moderate-mismatch  & 0.18 & 0.57 & 0.25 & 0.05 & 0.20 & 0.75 \\
+% & mixed-cadence      & 0.29 & 0.43 & 0.29 & 0.10 & 0.25 & 0.65 \\
+% & \textbf{average}   & \textbf{0.18} & \textbf{0.57} & \textbf{0.25} & \textbf{0.07} & \textbf{0.20} & \textbf{0.73} \\
+% \midrule
+% \multirow{4}{*}{Stripe}
+% & steady-sync         & 0.10 & 0.70 & 0.20 & 0.05 & 0.55 & 0.40 \\
+% & high-frequency      & 0.05 & 0.50 & 0.45 & 0.00 & 0.45 & 0.55 \\
+% & conservative-batch  & 0.25 & 0.60 & 0.15 & 0.10 & 0.55 & 0.35 \\
+% & \textbf{average}    & \textbf{0.13} & \textbf{0.60} & \textbf{0.27} & \textbf{0.05} & \textbf{0.52} & \textbf{0.43} \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+% ===== Compact version: averages only. Uncomment to swap in. =====
+\begin{table}[tb]
+\centering
+\caption{Frequency profile averages per project. Each row is the fraction of root and leaf models at each cadence, averaged across three profiles.}
+% \inv
+\label{dag:tab:freq-profiles}
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+& \multicolumn{3}{c}{Roots} & \multicolumn{3}{c}{Leaves} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+Project & wk & day & hr & wk & day & hr \\
+\midrule
+Tuva   & 0.18 & 0.57 & 0.25 & 0.07 & 0.20 & 0.73 \\
+Stripe & 0.13 & 0.60 & 0.27 & 0.05 & 0.52 & 0.43 \\
+\bottomrule
+\end{tabular}
+% \inv
+\end{table}
+
+\head{Cost metrics}
+We report two views of cost. \emph{Single-run cost} is the cost of executing the full DAG once. \emph{Frequency-weighted cost} weights each model's per-execution cost by the rate at which it actually needs to run, summed over the DAG; under capacity pricing this corresponds to the project's billed cost over a period. Refactoring and materialization affect both metrics; frequency optimization affects only the frequency-weighted metric. Improvements are reported as percent reduction relative to the original project.
+
+\head{Baselines}
+We compare against three baselines spanning the design space of SQL pipeline optimization.
+
+\emph{LearnedRewrite}~\cite{LR} is a rule-based per-query rewriter. It applies a portfolio of equivalence-preserving transformations to each compiled SQL independently, guided by a learned policy over which rules to apply and in what order. It is competitive on standalone analytical queries but has no view of the surrounding DAG.
+
+\emph{GenRewrite}~\cite{genrewrite} is an LLM-based per-query rewriter. It introduces natural-language rewrite rules that transfer knowledge across queries and a counterexample-guided loop that iteratively corrects syntactic and semantic errors in the rewrites. Like LearnedRewrite, it operates one model at a time.
+
+\emph{CSE} is a cross-model common subexpression baseline~\cite{scopeCSE}, which detects subexpressions shared across a SCOPE script's stages and materializes each once, re-optimized at the query optimizer's memo. The memo step is not portable, since managed warehouses do not expose their optimizer's internal state to external tools. We adapt the approach by detecting shared subexpressions at the AST level and selecting which to materialize heuristically. It is the only baseline
+in our comparison with cross-model scope, and represents the best a purely
+syntactic method can achieve on a managed warehouse without access to
+optimizer internals.
+
+
+
+
+
+
+
+
+
+\subsection{Comparison with Baselines}
+\label{dag:sec:eval-baselines}
+
+Table~\ref{dag:tab:overall} reports each method's improvement over the original project on Tuva and Stripe; \dagsmith{} leads on every metric on both. The gap between the single-run and frequency-weighted columns is the contribution of frequency optimization, which affects only the frequency-weighted view.
+
+\begin{table}[tb]
+\centering
+\caption{Improvement over the original project (\% reduction; higher is better). }
+\inv
+\label{dag:tab:overall}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+& \multicolumn{2}{c}{Single-run} & \multicolumn{2}{c}{Freq-weighted} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+& Elapsed & Slot & Elapsed & Slot \\
+\midrule
+\multicolumn{5}{l}{\emph{Tuva (255 models)}} \\
+LearnedRewrite & $-19.6$ & $-2.5$ & $-20.2$ & $-3.0$ \\
+GenRewrite     & $9.7$   & $17.7$ & $21.5$  & $15.1$ \\
+CSE            & $12.2$  & $34.6$ & $27.7$  & $37.9$ \\
+\dagsmith{}        & $\mathbf{30.9}$ & $\mathbf{51.1}$ & $\mathbf{42.6}$ & $\mathbf{67.7}$ \\
+\midrule
+\multicolumn{5}{l}{\emph{Stripe (65 models)}} \\
+LearnedRewrite & $2.6$   & $2.7$   & $-0.5$  & $4.5$  \\
+GenRewrite     & $7.6$   & $7.1$   & $1.1$   & $9.3$  \\
+CSE            & $-3.2$  & $-5.6$  & $-3.1$  & $-0.6$ \\
+\dagsmith{}        & $\mathbf{40.0}$ & $\mathbf{47.4}$ & $\mathbf{36.1}$ & $\mathbf{54.8}$ \\
+\bottomrule
+\end{tabular}
+\inv
+\end{table}
+
+
+Each baseline falls short for a different structural reason. We name the limit in each case, then summarize the classes of optimization that account for the gap above the strongest baseline.
+
+\head{LearnedRewrite: no net improvement on either project} LearnedRewrite applies equivalence-preserving rules independently to each model and therefore cannot reach any of the cross-model optimizations identified in Section~\ref{dag:sec:dependencies-as-signals}, such as non-local semantic reuse and downstream-aware pruning, whose benefit depends on neighboring models. On Tuva, the one rule that fires at scale replaces a post-join \code{SELECT DISTINCT} with a \code{GROUP BY} that pre-deduplicates each join input. When the join key is near-unique, this grouping is nearly free and lets the query skip an expensive \code{DISTINCT} over the wide joined result, making the rewrite faster. When many rows share each key value, the warehouse already runs the original efficiently as a semi-join, and the extra grouping is wasted work that slows the rewrite down. Across the models the rule touches, wins and losses are roughly balanced. On Stripe, which is already hand-factored, LearnedRewrite's rules find little to match and it changes almost nothing. Overall, LearnedRewrite barely changes either project's cost: rule-based per-query rewriting has little left to do once the warehouse planner has already handled the simple per-query cases, and the changes that would actually help these projects span multiple models, which it cannot do.
+
+
+\head{GenRewrite: cuts cost within a single model, not across the pipeline} GenRewrite restructures a single model to compute the same result more cheaply, such as replacing an $O(n^2)$ self-join with $O(n)$ window functions, a rewrite current rule-based systems do not support; on Tuva these account for its 17.7\% slot-time reduction. The gain is bounded because every rewrite stays inside a single model: GenRewrite cannot share work across models, change materialization, or skip refreshes. It can also regress, because it rewrites each model on its own. The same expensive self-join appears in several near-identical models. It applied the O(n) rewrite to one model but, on a near-identical sibling, produced three self-joins costing over twice the original, unable to recognize the two as the same. On Stripe, already hand-factored, fewer such rewrites are available and the gain is smaller (a 7.1\% slot-time reduction). 
+% GenRewrite optimizes each model without seeing the others, which both caps its savings and lets it regress sometimes. 
+
+\head{CSE: syntactic matching sees duplication, not equivalence} CSE matches subexpressions across models by their SQL structure, and is the only baseline that works across models. Where the same SQL recurs, it does well: Tuva has a large family of models that each scan and classify the same claims source with nearly identical SQL, and CSE detects the repeated work and runs it once for the whole family, which is most of its 34.6\% Tuva slot-time reduction. Where the SQL differs, it cannot recognize the reuse: six models compute the same per-encounter totals, each from different inputs and in different SQL, and CSE does not see them as the same, recovering little of the shared work. On Stripe, CSE slightly increases cost rather than reducing it, the only baseline to do so. Extracting a subexpression into a shared model only pays off when enough consumers reuse it; on Stripe, what CSE extracts is reused by too few consumers to cover the cost of building and scanning it. 
+
+
+
+\head{\dagsmith{}: four patterns that the baselines structurally cannot reach} \dagsmith{}'s advantage over the strongest baseline comes from four recurring patterns. The first two are cross-model refactorings that go beyond matching SQL text; the last two are materialization choices that no SQL rewriter can change. We give one example of each from the workloads.
+
+\emph{(1) Sharing equivalent work that is written in different SQL.} Models that compute the same thing over different inputs are folded into one shared model, even when their SQL does not match. Take the six encounter models from above, which compute the same per-encounter totals but cannot be matched on SQL text: \dagsmith{} builds one shared rollup that carries the encounter type as a column and replaces all six with short lookups, cutting their slot-time by about 77\%, against CSE's 14\%.  CSE detects that the six share structure but skips them, because their differing encounter-type literals leave the SQL not byte-identical; the equivalence is clear only once the LLM reads what each model computes.
+
+\emph{(2) Replacing repeated wide-table joins with a narrow shared intermediate.} In one Tuva consumer, a union of 32 branches, seven of them each join a different encounter model to the same wide claim-line staging table only to read two of its columns. \dagsmith{} materializes those two columns once as a narrow intermediate and points all seven joins at it, cutting the consumer's slot-time by about 74\%. The saving comes from the joins, not the scan: probing a two-column intermediate builds a far smaller hash table than the wide staging table (the warehouse already prunes unused columns). CSE cannot find this, because each branch joins a different upstream model and no two branches are the same SQL fragment to match.
+
+\emph{(3) Storing a staging chain as views so the planner can optimize across it.} A staging model stored as a table is built in full and read back as a fixed result the planner cannot optimize across. Stored as a view, it is just SQL the planner folds into the query that reads it, letting it push that query's filters down to the staging's sources and drop intermediate work the query never uses. \dagsmith{} treats this table-or-view choice as something to tune. On Stripe, switching the fifteen staging models behind a wide reporting model from tables to views, with no change to any SQL, cut the data it processes by about a third and its slot-time by about 60\%. Materializing each staging as a table seems like it should help by computing it once, but a table is built in full before the reporting query's filters can apply, leaving the planner nothing to trim; as views, those filters reach the sources, and the whole query is optimized at once. The table-or-view choice is a configuration setting, not part of the SQL; a tool that only rewrites compiled SQL never sees it.
+
+
+
+
+
+
+\emph{(4) Removing intermediates that feed only one model.} On Tuva, six normalize-and-vote stages were each materialized as a table, even though each fed only a single downstream model. Materializing an intermediate pays off only when several models reuse it; for a single consumer, the build cost is wasted. \dagsmith{}'s tuner flips these single-consumer stages to views, folding each into its one consumer and dropping the family's slot-time by about 24\%.  CSE keeps all six as tables and gets worse on the same family, because it cannot change materialization at all. No SQL rewriter can do this, because the choice is a materialization setting, not part of the SQL.
+
+% Frequency optimization accounts for the gap between the single-run and frequency-weighted columns of Table~\ref{dag:tab:overall}. It works in three ways: it weights each model's cost by how often it actually runs, focusing tuning on the models that run most; it cuts the schedule of models that run more often than their inputs change, removing redundant reruns; and it splits slow-changing work out of fast-refreshing models, moving that work onto a slower cadence. \linc{there are other layers in frequency-aware optimization, right? Did they help? I think we want to say a bit more here, since we have a full subsection on this optimization} \dagjie{to be done, will fine a case study later.} Like materialization, none of this is visible to a tool that sees only the compiled SQL.
+
+
+Frequency optimization accounts for the gap between the single-run and frequency-weighted columns of Table~\ref{dag:tab:overall}, realized through the three layers of Section~\ref{dag:sec:frequency}. The first two carry most of it: reweighting each model's cost by how often it actually runs steers tuning toward the models that dominate the recurring bill, and lowering the schedule of models that fire faster than their inputs change removes redundant reruns outright. The third layer, splitting slow-changing work out of a fast-refreshing model, is the most structural change and adds a modest 3.6\% reduction, because splittable models are rarer than they appear. Splitting needs both parents that change at different rates and a slow side separable from the fast path, and most models fail one of the two: all their inputs change at the same rate, or the slow and fast inputs are entangled at the row level. It pays off only when the slow side merely appends columns, as in a left join that adds a lookup description. Like materialization, none of this is visible to a tool that sees only the compiled SQL. 
+% \linc{This paragraph is getting slightly long. Can condense a bit if needing space.}
+
+
+The two projects lean on these patterns differently: \dagsmith{}'s advantage on Tuva comes mostly from patterns 1 and 2 (cross-model refactoring), and on Stripe from pattern 3 (materialization). The same pipeline produces both because it applies whatever fits each project rather than relying on a single mechanism. The next subsection quantifies each component's contribution.
+
+
+
+
+
+
+\begin{comment}
+    
+
+
+\head{\dagsmith{}: four patterns that the baselines structurally cannot reach} \dagsmith{}'s gap above the strongest baseline comes from four recurring patterns: the first two are cross-model refactorings that go beyond syntactic matching, the next two exercise dimensions outside SQL refactoring alone. We illustrate each with one concrete instance from the workloads.
+
+\emph{(1) Sharing equivalent work that is written in different SQL.} Models that compute the same thing over different inputs are folded into one shared model, even when their SQL does not match. Take the six encounter models from above, which compute the same per-encounter totals but cannot be matched on SQL text: \dagsmith{} builds one shared rollup that carries the encounter type as a column and replaces all six with short lookups, cutting the family's slot-time by about 77\%, against CSE's 14\%. \linc{what does recovers 127s mean? Also, isn't 127 smaller than 211, so faster?} \dagjie{replace previous ambiguous description with clearer percentage comparison.} The equivalence is invisible to SQL-text matching but clear once the LLM reads what each model computes.
+
+
+
+\emph{(2) Cross-model narrowing.} When many consumers each scan a wide table to read a small subset of its columns, the projection is extracted into a narrow intermediate they all read. On Tuva, a 14-branch union consumer reads one column from a wide claim-line table per branch; once \dagsmith{} extracts the narrow projection, the consumer drops from 1{,}420\,s to 374\,s. The shared work is column-level, which per-query rewriters do not see and AST matching misses because each branch references a different upstream model. \linc{why the AST match misses the column-level shared work? It's not very intuitive here.}
+
+
+\emph{(3) Changing how a model is stored to let the planner do more.} A model stored as a table is a fixed, precomputed result that its readers take as given. Written instead as a view, it is just SQL that the planner folds into each reading query, pushing that query's filters and column needs down into it and skipping work the reader never uses. \dagsmith{} treats this table-or-view choice as something to tune. On Stripe, switching a wide reporting model's staging from tables to views, with no change to any SQL, cut its slot-time by roughly 60\% by scanning much less data. \linc{what does byte-identical SQL mean? Also, why changing from table to view reduces scan? If we materialize as table, wouldn't subsequent models scan less?} \dagjie{see below.} Precomputing the staging as a table looks like it should help, but it builds and stores the entire wide result, including parts no reader needs, while the view lets the planner build only what each reader uses. No tool that sees only the compiled SQL can make this change.
+
+
+
+\emph{(3) Materialization revision unlocks planner reach.} A model materialized as a table is an opaque scan to the planner. In contrast, as a view, the planner sees the source SQL and can push predicates, prune columns, and reorder joins across the staging boundary. \dagsmith{} treats materialization as an optimization variable and revises it across the project. On Stripe, flipping a wide reporting model's staging layer from tables to views cuts its bytes scanned by a third and its slot by $2.5\times$, on byte-identical SQL. \linc{what does byte-identical SQL mean? Also, why changing from table to view reduces scan? If we materialize as table, wouldn't subsequent models scan less?} The savings come entirely from the planner but exist only because \dagsmith{} changed the materialization choice, which no approach operating on compiled SQL alone can reach.
+
+\emph{(4) Materialization revision tied to refactored structure.} The right materialization for the original project is not the right one for the refactored project: once a refactoring changes which models read from which, an upstream table's build cost can stop being worth paying. On Tuva, six voting and normalize stages, each feeding a single consumer, were tables in the original project; once \dagsmith{} refactors the consumers, the tuner flips them to views and the family's slot drops by 24\%. \linc{Again, why flipping from table to view drops slot?} CSE, which reuses the original project's materialization choices, regresses on the same family. \linc{then what? Did \dagsmith{} fix this? Or we just regress?} Neither pass alone finds the configuration the joint pass does, direct evidence that refactoring and materialization must be tuned jointly.
+
+Frequency optimization accounts for the gap between the single-run and frequency-weighted columns of Table~\ref{dag:tab:overall}: \dagsmith{} reduces the firing rate of models whose inputs change less often than they execute, eliminating redundant runs outright. \linc{there are other layers in frequency-aware optimization, right? Did they help? I think we want to say a bit more here, since we have a full subsection on this optimization} Like materialization, it is invisible to any approach that operates on compiled SQL alone.
+
+The two projects exercise these patterns in different proportions: Tuva's gap above the strongest baseline is dominated by patterns 1 and 2 (cross-model refactoring), Stripe's by pattern 3 (materialization revision). The same pipeline produces both because the optimizer applies what fits the project in front of it rather than committing to one mechanism upfront. The next subsection quantifies the contributions component by component.
+\end{comment}
+
+
+
+\subsection{Component Ablation}
+\label{dag:sec:eval-attribution}
+
+Section~\ref{dag:sec:eval-baselines} described the \emph{classes of optimization} responsible for \dagsmith{}'s gap above the baselines. This subsection asks how much each of \dagsmith{}'s own architectural components contributes and how they interact.
+We ablate along two axes: the three implementation dimensions of LLM refactoring (R; Section~\ref{dag:sec:llm-refactoring}), materialization tuning (M; Section~\ref{dag:sec:materialization}), and frequency optimization (F; Section~\ref{dag:sec:frequency}); and the dataflow analysis that targets the LLM stage (Section~\ref{dag:sec:candidate-identification}). We ablate on Tuva alone, since it is the larger and more structurally varied project and exercises all three dimensions meaningfully, whereas on the smaller Stripe project, attributing gains to individual components is unreliable. 
+
+\subsubsection{Three Optimization Dimensions}
+\label{dag:sec:eval-ablation-rmf}
+
+Table~\ref{dag:tab:ablation-rmf} reports the improvement of each subset of $\{R, M, F\}$ over the original Tuva project.
+
+\begin{table}[tb]
+\centering
+\caption{Tuva: dimension ablation (\% reduction over the original project, averaged across the three Tuva profiles in Table~\ref{dag:tab:freq-profiles}). R = refactoring, M = materialization tuning, F = frequency optimization. Bold marks the best variant in each column. }
+\inv
+\label{dag:tab:ablation-rmf}
+\small
+\begin{tabular}{lrr}
+\toprule
+Variant & Elapsed & Slot \\
+\midrule
+original         & --              & --              \\
+F only           & $13.2$          & $11.0$          \\
+M only           & $34.7$          & $37.0$          \\
+R only           & $40.0$          & $49.1$          \\
+M + F            & $31.0$          & $54.0$          \\
+R + M            & $\mathbf{43.1}$          & $54.7$          \\
+R + M + F (full) & $42.6$ & $\mathbf{67.7}$ \\
+\bottomrule
+\end{tabular}
+\inv
+\end{table}
+
+% The numerics admit four observations:
+% , each reflecting a property of how the dimensions are designed to interact.
+
+\head{Refactoring and materialization mostly remove work parallel to the critical path}  Recall that slot measures the total CPU-time the project consumes, while elapsed measures wall-clock time from the first model to the last. For every variant that includes refactoring or materialization, the slot reduction exceeds the elapsed reduction (R-only, for instance, cuts slot by 49.1\% but elapsed by 40.0\%), because \dagsmith{} removes work that runs parallel to the critical path more readily than work on it: consolidating many sibling models into one shared intermediate saves slot proportional to the number of siblings but shortens elapsed only by the slowest sibling's share. Frequency optimization is the exception, cutting elapsed and slot by comparable amounts (13.2\% vs.\ 11.0\%), because it removes whole scheduled executions rather than parallel work. The same mechanism explains the full pipeline: adding F on top of R+M raises the slot reduction sharply (54.7\% to 67.7\%) while elapsed is essentially unchanged (43.1\% to 42.6\%, a difference within run-to-run noise), because the redundant executions F eliminates lie off the critical path. F thus lowers billed cost without affecting wall-clock latency, which is exactly its intended effect.
+
+
+
+% \head{Slot reductions track total CPU work, elapsed tracks the critical path} \linc{The paragraph head should summarize what we have learned about your approach (or different components), instead of which metrics track which.} Recall that slot measures the total CPU-time the project consumes; elapsed measures the wall-clock time from first model to last. For every variant that includes refactoring or materialization, the slot reduction exceeds the elapsed reduction, because \dagsmith{} removes work parallel to the critical path more aggressively than work on it: consolidating many sibling models into one shared intermediate saves slot proportional to the sibling count but saves elapsed only the slowest sibling's share. The gap is largest for R-only (49.1\% slot vs.\ 40.0\% elapsed). Frequency optimization is the exception, cutting elapsed and slot by comparable amounts (13.2\% vs.\ 11.0\%) because it removes whole scheduled executions rather than parallel work. This is why the full pipeline holds the best slot number but not the best elapsed: on top of R+M, F adds heavily to slot (54.7\% to 67.7\%) by removing off-critical-path runs while leaving elapsed flat (43.1\% to 42.6\%), a half-point difference within the run-to-run noise band against a 13-point slot gain that is F's intended effect.
+
+% Percentages are of the 255 original models.
+
+\begin{table}[tb]
+\centering
+\caption{\dagsmith{}'s coverage of Tuva's 255 models. }
+\inv
+\label{dag:tab:coverage}
+\small
+\begin{tabular}{lr}
+\toprule
+Category & Count \\
+\midrule
+SQL refactored only              & 90 (35.3\%) \\
+Materialization retuned only     & 13 \phantom{(0}(5.1\%) \\
+Both refactored \& retuned       &  3 \phantom{(0}(1.2\%) \\
+New models created               & 11 \phantom{(0}(4.3\%) \\
+\midrule
+Total models modified            & 117 (45.9\%) \\
+\bottomrule
+\end{tabular}
+\inv
+\end{table}
+
+
+
+
+\head{R-only is close to R+M because R is not pure refactoring} When \dagsmith{}'s refactoring stage introduces a new model, it also assigns that model an optimal materialization as part of producing the candidate (Section~\ref{dag:sec:materialization}). R-only therefore already runs the materialization tuner on every model it creates, so its gap to R+M in Table~\ref{dag:tab:ablation-rmf} does not measure the value of materialization tuning; it measures only the slice R-only leaves out, the retuning of pre-existing models. 
+% \dagjie{add the sentence below for section 4.4 comments} \linc{I still think putting the numbers in the table would be better. Why not directly put all the percentage numbers in Table 4? Then, you can reference these numbers if needed throughout Section 4.3, instead of just this part.} 
+That slice is small: only 16 of Tuva's 255 models have their materialization retuned (Table~\ref{dag:tab:coverage}), and the R-only to R+M gap reflects exactly those 16. M-only trails R-only for the complementary reason: it revises materialization only on the original DAG and cannot create models. Even so, M cannot be dropped in favor of R+F. On Tuva the materialization that R assigns to its new models already sits close to the project-wide optimum, so M's extra retuning adds little; this overlap varies across projects, and where it is smaller M contributes more.
+
+
+
+
+
+% \head{R-only is close to R+M because R is not pure refactoring} When \dagsmith{}'s refactoring stage introduces a new model, it also assigns that model an optimal materialization as part of producing the candidate (Section \ref{dag:sec:materialization}). \linc{broken reference} \dagjie{Fixed.} The R-only variant therefore already tunes newly created models; what M adds is project-wide retuning of pre-existing models, a smaller marginal change, so the gap between R-only (49.1\%) and R+M (54.7\%) is modest. M-only (37.0\%) trails R-only because it cannot create models and can only revise materialization on the original DAG. \linc{If M only adds marginally on top of R, shouldn't we just remove M from the pipeline and use R+F?}
+
+% \head{Refactoring and materialization are coupled} R+M (54.7\%) exceeds the larger singleton (R: 49.1\%) by 5.6 points: the refactored DAG admits a different optimal materialization than the original, and the joint pass finds savings neither stage produces in isolation. This makes the Section~\ref{dag:sec:eval-baselines} argument concrete: pattern 4 of Section~\ref{dag:sec:eval-baselines} contributes to R+M but to neither R nor M alone. \linc{Eh this paragraph and the paragraph above actually conflicts with each other... this paragraph says that both stages are important, but the previous paragraph says that what M adds over R is only marginal change. So which is our conclusion? We're referencing exactly the same number here.}
+
+
+
+\head{Frequency's increment depends on how much over-scheduled work the prior dimensions leave behind} F alone delivers 11.0\%, adds 17.0\% on top of M (54.0\% vs.\ 37.0\%) and 13.0\% on top of R+M (67.7\% vs.\ 54.7\%). F's reach is bounded by the over-scheduled work present in the project, and that pool depends on the prior dimensions: refactoring can move work onto the right cadence and remove it from F's surface (splitting a fast-cadence model into a slow rollup and a fast lookup), while materialization tuning leaves the over-schedule pool largely intact, so F has more to remove on top of M than on top of R+M. F's increment never collapses to zero, which shows it is orthogonal to R and M rather than a redundant pass; and because that increment varies with the prior dimensions, the three interact rather than add independently. 
+
+
+
+% \head{Frequency's increment depends on what came before it} \linc{it's unclear what does ``what'' means here? Models? Improvements from other optimizations? We should be explicit.} F alone delivers 11.0\%, adds 17.0 points on top of M ($54.0$ vs.\ $37.0$) and 13.0 on top of R+M ($67.7$ vs.\ $54.7$). F's reach is bounded by the over-scheduled work present in the project, and that pool depends on the prior dimensions: refactoring can move work onto the right cadence and remove it from F's surface (splitting a fast-cadence model into a slow rollup and a fast lookup), while materialization tuning leaves the over-schedule pool largely intact, so F has more to remove on top of M than on top of R+M. The increment never collapses, which confirms F is structurally orthogonal to R and M rather than a redundant pass, and its size confirms the three dimensions interact in non-trivial ways. \linc{size of what? time improvements?}
+
+\subsubsection{Dataflow Analysis}
+\label{dag:sec:eval-ablation-dataflow}
+
+This experiment isolates the contribution of the dataflow analysis that produces \dagsmith{}'s candidate set (Section~\ref{dag:sec:candidate-identification}): does structural targeting direct the LLM stage to more productive regions of the DAG than alternatives that do not use it? We hold the LLM-call budget fixed across every configuration we compare, so the comparison reflects how well a fixed budget is spent rather than how many invocations are made. In the standard pipeline, dataflow analysis selects at most 20 subgraphs on Tuva, each capped at 60 nodes with 3 diagnostic-and-correction attempts; we hold this budget fixed across two alternatives. Table~\ref{dag:tab:ablation-dataflow} reports the result.
+
+\begin{table}[tb]
+\centering
+\caption{Dataflow Analysis: targeting ablation on Tuva (\% slot reduction over the original project) under a fixed LLM-call budget across all arms.}
+\inv
+\label{dag:tab:ablation-dataflow}
+\small
+\begin{tabular}{lcc}
+\toprule
+Selection rule & Single-run slot & Freq-weighted slot \\
+\midrule
+Whole-DAG                  & \multicolumn{2}{c}{no valid DAG} \\
+Random subgraphs           & $43.1$ & $58.0$ \\
+Dataflow-guided (\dagsmith{})  & $\mathbf{51.1}$ & $\mathbf{67.7}$ \\
+\bottomrule
+\end{tabular}
+\inv
+\end{table}
+
+\head{Whole-DAG refactoring} The first alternative hands the entire project to the LLM under the same 3-attempt budget, testing whether bounding its attention to a region is needed at all. On Tuva the whole DAG fits in context (134k input tokens) and analysis succeeds, surfacing most of the opportunities our pipeline finds, but implementation never produces a runnable project. The response must restate every rewritten model in full, so it grows long enough to truncate mid-output and leave dangling references; cross-model references grow inconsistent as a fix to one model breaks an assumption in another; and because every broad attempt breaks somewhere, the correction loop retreats in scope across the three attempts (51, then 35, then 8 models). A broad rewrite captures most of the gain but touches too many interdependent models to verify, while one narrow enough to verify captures only a fraction. Dataflow analysis resolves this by making each subgraph small enough to verify while still reaching the high-value regions one at a time.
+
+\head{Random subgraphs} The second alternative changes only the selection rule, holding the subgraph count, size cap, and refactoring procedure fixed: we draw a model uniformly at random, take its parents, children, and siblings as a subgraph, and repeat until the count matches the standard pipeline, discarding any neighborhood over the node cap. This isolates the contribution of \emph{where} the pipeline chooses to look. As Table~\ref{dag:tab:ablation-dataflow} shows, random selection reaches 43.1\% single-run and 58.0\% frequency-weighted slot reduction, against 51.1\% and 67.7\% for dataflow-guided selection. The gap is a structural mismatch: an edge-based subgraph groups a model with its dependency neighbors, but the models worth refactoring together are elsewhere in the project, computing the same pattern over different inputs without sharing a single edge, so no edge-based neighborhood contains both and widening it only adds irrelevant dependency-adjacent models. Dataflow-guided selection groups on the structure of the computation rather than on dependency edges, placing the models that compute the same pattern in one subgraph regardless of where they sit in the DAG.
+ 
+ 
+
+
+
+
+
+
+
+
+\subsection{System Characterization}
+\label{dag:sec:eval-system}
+
+This subsection asks whether the machinery behind the gains is sound and affordable: the equivalence-verification loop that catches unsafe rewrites, the LLM cost of running \dagsmith{} end to end, and the accuracy of the learned cost model that drives materialization.
+
+\subsubsection{Equivalence-Verification Effectiveness}
+\label{dag:sec:eval-verification}
+
+The question for the verification loop (\S\ref{dag:sec:llm-refactoring}) is whether it catches unsafe rewrites without discarding safe ones, under a budget of three correction attempts per subgraph. Of the 20 candidate subgraphs on Tuva, 12 fit within the size cap and reach verification (Table~\ref{dag:tab:verification}). Only a quarter pass on the first attempt, and the rewrites the diagnostics reject fall into two recurring patterns a per-query checker cannot detect. The dominant one is a grain collapse: the rewrite reads a value from a pre-deduplicated sibling that keeps one row per key, silently dropping the secondary rows the original aggregates over (Figure~\ref{dag:fig:critic-catch}). The second is algorithm substitution: a cheaper algorithm whose output differs from the original, such as a window-based interval merge that yields different groupings than the pairwise merge it replaces. Yet none of the 12 exhausts the budget: every rejected subgraph passes within a second attempt once its violated invariants are returned to the rewriter, so the loop is a gate rather than a dead end. On Stripe most candidates pass on the first attempt, since its smaller DAG and simpler SQL leave the rewrites less error-prone.
+
+\begin{table}[tb]
+\centering
+\caption{Equivalence-verification outcomes on Tuva's 12 refactoring subgraphs (three-attempt budget each).}
+\inv
+\label{dag:tab:verification}
+\small
+\begin{tabular}{lr}
+\toprule
+Outcome & Subgraphs \\
+\midrule
+Pass within 1 attempt        & 25\% (3/12) \\
+Pass within 2 attempts       & 100\% (12/12) \\
+Never pass (budget exhausted) & 0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{LLM Cost}
+\label{dag:sec:eval-llm-cost}
+
+Running \dagsmith{} is a one-time, design-time cost, paid once per project and amortized over every scheduled run of the optimized pipeline. Optimizing Tuva's 375 models with GPT-5.4 cost \$11.51 and 2.4M tokens, about \$0.03 per model, dominated by the rewriting stage (Table~\ref{dag:tab:llmcost}). This is small beside the recurring warehouse cost the optimized pipeline removes on every run.
+
+\begin{table}[tb]
+\centering
+\caption{End-to-end LLM cost of optimizing Tuva (GPT-5.4)}
+\inv
+\label{dag:tab:llmcost}
+\small
+\begin{tabular}{lccccc}
+\toprule
+ & Proposal & Filtering & Rewriting & Verification & Total \\
+\midrule
+Cost (\$)  & 2.00 & 0.96 & 5.68 & 2.88 & 11.51 \\
+Share (\%) & 17   & 8    & 49   & 25   & 100 \\
+\bottomrule
+\end{tabular}
+\inv
+\end{table}
+
+\subsubsection{Cost Model Accuracy}
+\label{dag:sec:eval-cost-model}
+
+The learned cost model only needs to rank refactoring and materialization options within a project, not predict absolute runtimes or generalize across projects. Fit per project on the 156 instrumented Tuva models, its slot-time predictor, the quantity the ILP minimizes, reaches R$^2$=0.74 from static SQL and DAG features alone. Cardinality is harder (R$^2$=0.28), since row counts depend on data content that static features cannot see, but directional estimates are enough for ranking.

@@ -1,0 +1,169 @@
+% ============================================================
+% macros/genrewrite_macros.tex -- regenerated from the paper's macros.tex during the
+% dissertation merge. Renamed macros: \barzan->\genbarzan, \cancut->\gencancut, \head->\genhead, \tofix->\gentofix, \tool->\genrewrite, \jie->\genjie.
+% Duplicate names shared with earlier-loaded macro files use
+% \renewcommand (definitions are identical).
+% ============================================================
+
+\renewcommand{\query}{Q}
+\definecolor{commentgray}{gray}{0.5}
+
+% SQL language 
+\renewcommand{\sqlspace}{\;}
+\renewcommand{\sqldistinct}{\textbf{\texttt{DISTINCT}}\xspace}
+\renewcommand{\sqlselect}{\textbf{\texttt{SELECT}}\xspace\xspace}
+\renewcommand{\sqlfrom}{\textbf{\texttt{FROM}}\xspace\xspace}
+\renewcommand{\sqlwhere}{\textbf{\texttt{WHERE}}\xspace\xspace}
+\renewcommand{\whereclause}{\textbf{\texttt{WHERE}}\xspace}
+\renewcommand{\sqlgroupby}{\textbf{\texttt{GROUP}}\sqlspace\textbf{\texttt{BY}}\xspace}
+\renewcommand{\sqlhaving}{\textbf{\texttt{HAVING}}\xspace\xspace}
+\renewcommand{\sqlorderby}{\textbf{\texttt{ORDER}}\sqlspace\textbf{\texttt{BY}}\xspace\xspace}
+\renewcommand{\sqlover}{\textbf{\texttt{OVER}}\xspace\xspace}
+\renewcommand{\sqlpartitionby}{\textbf{\texttt{PARTITION}}\sqlspace\textbf{\texttt{BY}}\xspace\xspace}
+\renewcommand{\sqljoin}{\textbf{\texttt{JOIN}}\xspace\xspace}
+\renewcommand{\sqlfulljoin}{\textbf{\texttt{FULL JOIN}}\xspace\xspace}
+\renewcommand{\sqlinnerjoin}{\textbf{\texttt{INNER}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}
+\renewcommand{\sqlleftjoin}{\textbf{\texttt{LEFT}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}
+\renewcommand{\sqlrightjoin}{\textbf{\texttt{RIGHT}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}
+\renewcommand{\sqlon}{\textbf{\texttt{ON}}\xspace\xspace}
+\renewcommand{\sqlas}{\textbf{\texttt{AS}}\xspace\xspace}
+\renewcommand{\sqlmax}{\textbf{\texttt{MAX}}\xspace\xspace}
+\renewcommand{\sqlmin}{\textbf{\texttt{MIN}}\xspace\xspace}
+\newcommand{\sqlin}{\textbf{\texttt{IN}}\xspace\xspace}
+\renewcommand{\sqlcount}{\textbf{\texttt{COUNT}}\xspace\xspace}
+\renewcommand{\sqlsum}{\textbf{\texttt{SUM}}\xspace\xspace}
+\renewcommand{\sqlavg}{\textbf{\texttt{AVG}}\xspace\xspace}
+\renewcommand{\sqlrank}{\textbf{\texttt{RANK}}\xspace\xspace}
+\renewcommand{\sqldenserank}{\textbf{\texttt{DENSE\_RANK}}\xspace\xspace}
+\renewcommand{\sqlunionall}{\textbf{\texttt{UNION ALL}}\xspace\xspace}
+
+% SQL language with color
+\renewcommand{\sqlspacecolor}{{\color{black}{{\;}}}}
+\renewcommand{\sqldistinctcolor}{{\color{black}{{\textbf{\texttt{DISTINCT}}\xspace\xspace}}}}
+\renewcommand{\sqlcoalescecolor}{{\color{black}{{\textbf{\texttt{COALESCE}}\xspace\xspace}}}}
+\renewcommand{\sqlselectcolor}{{\color{black}{{\textbf{\texttt{SELECT}}\xspace\xspace}}}}
+\renewcommand{\sqlfromcolor}{{\color{black}{{\textbf{\texttt{FROM}}\xspace\xspace}}}}
+\renewcommand{\sqlwherecolor}{{\color{black}{{\textbf{\texttt{WHERE}}\xspace\xspace}}}}
+\renewcommand{\whereclausecolor}{{\color{black}{{\textbf{\texttt{WHERE}}\xspace}}}}
+\renewcommand{\sqlgroupbycolor}{{\color{black}{{\textbf{\texttt{GROUP}}\sqlspace\textbf{\texttt{BY}}}\xspace}}}
+\renewcommand{\sqlhavingcolor}{{\color{black}{{\textbf{\texttt{HAVING}}\xspace\xspace}}}}
+\renewcommand{\sqlorderbycolor}{{\color{black}{{\textbf{\texttt{ORDER}}\sqlspace\textbf{\texttt{BY}}\xspace\xspace}}}}
+\renewcommand{\sqlovercolor}{{\color{black}{{\textbf{\textbf{\texttt{OVER}}}\xspace\xspace}}}}
+\renewcommand{\sqlpartitionbycolor}{{\color{black}{{\textbf{\texttt{PARTITION}}\sqlspace{\textbf{\texttt{BY}}}\xspace\xspace}}}}
+\renewcommand{\sqljoincolor}{{\color{black}{{\textbf{\texttt{JOIN}}\xspace\xspace}}}}
+\renewcommand{\sqlfulljoincolor}{{\color{black}{{\textbf{\texttt{FULL JOIN}}\xspace\xspace}}}}
+\renewcommand{\sqlinnerjoincolor}{{\color{black}{{\textbf{\texttt{INNER}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}}}}
+\renewcommand{\sqlleftjoincolor}{{\color{black}{{\textbf{\texttt{LEFT}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}}}}
+\renewcommand{\sqlrightjoincolor}{{\color{black}{{\textbf{\texttt{RIGHT}}\sqlspace\textbf{\texttt{JOIN}}\xspace\xspace}}}}
+\renewcommand{\sqloncolor}{{\color{black}{{\textbf{\texttt{ON}}\xspace\xspace}}}}
+\renewcommand{\sqlascolor}{{\color{black}{{\textbf{\texttt{AS}}\xspace\xspace}}}}
+\renewcommand{\sqlandcolor}{{\color{black}{{\textbf{\texttt{AND}}\xspace\xspace}}}}
+\renewcommand{\sqlmaxcolor}{{\color{black}{{\textbf{\texttt{MAX}}\xspace\xspace}}}}
+\renewcommand{\sqlmincolor}{{\color{black}{{\textbf{\texttt{MIN}}\xspace\xspace}}}}
+\renewcommand{\sqlcountcolor}{{\color{black}{{\textbf{\texttt{COUNT}}\xspace\xspace}}}}
+\renewcommand{\sqlsumcolor}{{\color{black}{{\textbf{\texttt{SUM}}\xspace\xspace}}}}
+\renewcommand{\sqlavgcolor}{{\color{black}{{\textbf{\texttt{AVG}}\xspace\xspace}}}}
+\renewcommand{\sqlrankcolor}{{\color{black}{{\textbf{\texttt{RANK}}\xspace}}}}
+\renewcommand{\sqldenserankcolor}{{\color{black}{{\textbf{\texttt{DENSE\_RANK}}\xspace}}}}
+\renewcommand{\sqlunionallcolor}{{\color{black}{{\textbf{\texttt{UNION ALL}}\xspace\xspace}}}}
+
+
+\DeclareRobustCommand{\Circled}[1]{%
+  \raisebox{.2ex}{\textcircled{\raisebox{-0.1ex}{#1}}}%
+}
+
+
+\newcommand{\cntpct}[2]{#1~(#2\%)}
+
+
+\newcommand{\genbarzan}[1]{{\color{cyan}{\textbf{BM: #1}}}}
+\newcommand{\gentofix}[1]{{\color{red}{\textbf{#1}}}}
+\newcommand{\gencancut}[1]{{\color{green}{\textbf{#1}}}}
+
+
+\definecolor{revone}{HTML}{1E88E5}   % Reviewer 1 (blue)
+\definecolor{revtwo}{HTML}{D81B60}   % Reviewer 2 (magenta)
+\definecolor{revthree}{HTML}{F57C00} % Reviewer 3 (yellow)
+
+
+% \newcommand{\revoneeq}[1]{\begingroup\textcolor{revone}#1\endgroup}
+
+% \newcommand{\revone}[1]{\textcolor{revone}{#1}}
+% \newcommand{\revtwo}[1]{\textcolor{revtwo}{#1}}
+% \newcommand{\revthree}[1]{\textcolor{revthree}{#1}}
+
+
+\newcommand{\revone}[1]{{ #1}}
+\newcommand{\revtwo}[1]{{ #1}}
+\newcommand{\revthree}[1]{{ #1}}
+\newcommand{\revoneeq}[1]{{ #1}}
+
+% \newcommand{\genjie}[1]{{\color{orange}{\textbf{Jie: #1}}}}
+\newcommand{\ooo}[1]{{\color{orange}{\textbf{Jie: #1}}}}
+% \newcommand{\genjie}[1]{{\color{blue} #1}}
+\newcommand{\genjie}[1]{{ #1}}
+
+% \newcommand{\cut}[1]{\sout{#1}}
+\newcommand{\cut}[1]{}
+
+%\newcommand{\gencancut}[1]{\sout{#1}}
+% \newcommand{\gencancut}[1]{}
+
+\newcommand{\inv}{\vspace*{-2mm}}
+\newcommand{\sinv}{\vspace*{-2mm}}
+
+
+\newcommand{\genhead}[1]{{{\vspace*{1mm} \noindent \textbf{#1.}}}}
+
+% \newcommand{\genrewrite}{\texttt{GenRewrite}\xspace}
+\newcommand{\genrewrite}{\textsc{GenRewrite}\xspace}
+
+\newcommand{\lr}{\textsc{LR}\xspace}
+
+\newcommand{\lithe}{\textsc{LITHE}\xspace}
+
+\newcommand{\rbot}{\textsc{R-Bot}\xspace}
+% \newcommand{\llmr2}{\textbf{LLM-R\textsuperscript{2}\xspace}
+
+% \newcommand{\llmr2}{\textbf{LLM-R}\textsuperscript{2}\xspace}
+
+
+\newcommand{\baseline}{\textsc{Baseline LLM}\xspace}
+
+
+
+\newcommand{\fixnow}[1]{{\color{red}{\textbf{#1}}}}
+
+
+\newcommand{\reviewhead}[1]{{{\vspace*{1mm} \noindent \textbf{#1:}}}}
+
+
+
+
+\newfloat{listing}{htbp}{lol}
+\floatname{listing}{Listing}
+
+
+\lstdefinestyle{genrewriteCode}{
+    language=SQL,
+    basicstyle=\tiny\ttfamily,
+    % --- Keyword Highlighting ---
+    keywordstyle=\color[HTML]{228B22}\bfseries, % Green for SQL keywords
+    ndkeywordstyle=\color[HTML]{228B22}\bfseries,
+    identifierstyle=\color{black},
+    commentstyle=\color{gray},
+    stringstyle=\color[HTML]{B22222},            % Dark red for strings like 's'
+    % --- Other Settings ---
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=5pt,
+    backgroundcolor=\color{gray!5},
+    frame=single,
+    rulecolor=\color{gray!40},
+    breaklines=true,
+    escapeinside={|}{|},
+    showstringspaces=false,
+    columns=flexible,
+    xleftmargin=2mm
+}

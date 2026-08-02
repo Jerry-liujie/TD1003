@@ -1,0 +1,161 @@
+\section{Problem Setup}
+\label{slab:sec:problem}
+
+This section presents the query language and integrity constraints considered by \toolname, followed by our problem definition. 
+
+%\subsection{Query Space}
+%\label{slab:sec:querylanguage}
+
+\head{Query space}
+See Figure~\ref{slab:fig:querysyntax} for the formal language that supports a wide subset of SQL such as arbitrary nesting and join patterns. 
+%\slabcity currently supports a wide subset of SQL queries, including arbitrary nesting and join patterns. See Figure~\ref{slab:fig:querysyntax} for the formal language currently supported by \slabcity.
+
+
+
+%\subsection{Integrity Constraints}
+%\label{slab:sec:integrityconstraints}
+
+\head{Integrity constraints}
+Below are the types of integrity constraints \slabcity currently supports:
+\begin{itemize}[leftmargin=*]
+\item 
+Primary and foreign keys. 
+\item 
+Comparisons within a row --- e.g.,  $\texttt{T.StartTime} < \texttt{T.EndTime}$. 
+\item 
+Implication constraints within a row. For example, $\texttt{T.EmailType} \neq \emph{spam} \rightarrow \texttt{T.action} = \texttt{NULL}$. 
+%means if column \texttt{EmailType} is not \emph{spam} then column \texttt{action} is \texttt{NULL}. 
+\item 
+Whether or not a column can be \texttt{NULL}. 
+\item 
+Range constraints (for columns of integer or numeric types).
+\item 
+Enum types (e.g., column \texttt{Device} can draw from \{ \emph{S8}, \emph{iPhone} \}).
+\end{itemize}
+
+\begin{comment}
+\begin{enumerate}
+    \item primary keys
+    \item foreign keys
+\item comparative constraints within a row, e.g. \texttt{T.StartTime < T.EndTime} 
+    \item implication constraints within the same row, e.g. \texttt{T.EmailType != "spam" -> T.action = NULL} means if the value of column \texttt{EmailType} is not \texttt{"spam"}, then the value of column \texttt{action} is \texttt{NULL}
+        \item whether or not a column can be \texttt{NULL}
+    \item range constraints (for int or numeric type columns)
+    \item enum types, e.g. column \texttt{Device} can only take values from the set \texttt{\{"S8", "iPhone"\}}
+    %\item \tofix{special constraints within a column, including 1) values of a column are incremental, 2) values of a column are consecutive.} \barzan{this one is a bit strange, what is the actual name of this kind of constraint in Oracle? auto increment is a feature not an IC afaik}     \xinyu{I think this one is very rare in the benchmarks. we do not have to include this one in the list.}
+\end{enumerate}
+\end{comment}
+
+
+\head{Problem statement} 
+Now we are ready to define our problem. 
+%\subsection{Query Optimization Problem Statement}
+%\label{slab:sec:problemstatement}
+
+\begin{definition}
+Given a query $\inputquery$ and an integrity constraint $\dataconstraint$, find a query $\query$ from our query language, such that the following two conditions hold: 
+\begin{enumerate}[leftmargin=*]
+\item 
+$\query$ is semantically equivalent to $\inputquery$ with respect to $\dataconstraint$. 
+That is, $\query$ and $\inputquery$ produce the same output on any database $\inputdb$ that meets the integrity constraint $\integrityconstraint$. 
+\item 
+$\query$ runs faster than $\inputquery$. Here, query performance is measured using \texttt{EXPLAIN} or the actual execution of the query.
+\end{enumerate}
+\label{slab:def:problem}
+\end{definition}
+
+
+
+\begin{figure}[!t]
+\footnotesize
+\centering
+\[
+\arraycolsep=1.5pt\def\arraystretch{1.1}
+\begin{array}{rrll}
+
+\emph{Query} & 
+\query & 
+\grammareq & 
+\emph{an input table} \\ 
+& & \ \ \ | &  
+\sqlselect \sqlspace \targetlist \sqlspace \sqlfrom \sqlspace \query \sqlspace \sqlwhere \sqlspace \sqlpredicate \\ 
+& & \ \ \ | &  
+\sqlselect \sqlspace \targetlist \sqlspace \sqlfrom \sqlspace \query \sqlspace \sqlgroupby \sqlspace \cols \sqlspace \sqlhaving \sqlspace \sqlpredicate \\ 
+& & \ \ \ | &  
+\sqlselect \sqlspace \targetlist \sqlspace \sqlfrom \sqlspace \query \sqlspace \sqlorderby \sqlspace \cols  \\ 
+& & \ \ \ | &  
+\query \sqlspace \sqlinnerjoin \sqlspace \query \sqlspace \sqlon \sqlspace \sqlpredicate \\ 
+& & \ \ \ | &  
+\query \sqlspace \sqlleftjoin \sqlspace \query \sqlspace \sqlon \sqlspace \sqlpredicate 
+%& & \ \ \ | &  
+%\query \sqlspace \sqlrightjoin \sqlspace \query \sqlspace \sqlon \sqlspace \sqlpredicate 
+\\[2pt]
+
+\emph{Target List} & 
+\targetlist & 
+\grammareq & 
+[ \target \sqlspace \sqlas \sqlspace \colalias, \mydots, \target \sqlspace \sqlas \sqlspace \colalias ]
+\\
+& & \ \ \ | &  
+\sqldistinct \sqlspace [ \target \sqlspace \sqlas \sqlspace \colalias, \mydots, \target \sqlspace \sqlas \sqlspace \colalias ] 
+%\rui{add DISTINCT?}
+\\[2pt]
+
+\emph{Target} & 
+\target & 
+\grammareq & 
+\col \ | \ \agg(\col) \ | \ \agg( \sqldistinct \sqlspace \col) 
+%\rui{add DISTINCT?} 
+\\
+& & \ \ \ | &  
+\agg(\col) \sqlspace \sqlover( \sqlpartitionby \sqlspace \cols \sqlspace \sqlorderby \sqlspace \cols )
+\\ 
+& & \ \ \ | &  
+\windowfunc \sqlspace \sqlover( \sqlpartitionby \sqlspace \cols \sqlspace \sqlorderby \sqlspace \cols )
+\\[2pt] 
+
+\emph{Column List} & 
+\cols & 
+\grammareq & 
+[\col, \mydots, \col]
+\\[2pt]
+
+\emph{Column} & 
+\col & 
+\grammareq & 
+\colalias \ | \ \emph{a column from an input table} 
+\\[2pt]
+
+\emph{Condition} & 
+\sqlpredicate & 
+\grammareq & 
+\sqlexpr \ \emph{op} \ \sqlexpr \ | \ \sqlpredicate \land \sqlpredicate \ | \ \sqlpredicate \lor \sqlpredicate 
+\\[2pt] 
+
+\emph{Expression} & 
+\sqlexpr & 
+\grammareq & 
+\col \ | \ \agg(\col) \ | \ \agg(\sqldistinct \sqlspace \col) \ | \ \emph{const}
+\\[2pt] 
+
+\emph{Agg. Func.} & 
+\agg & 
+\grammareq & 
+\sqlmax \ | \ \sqlmin \ | \ \sqlavg \ | \ \sqlsum \ | \ \sqlcount 
+\\[2pt] 
+
+\emph{Window Func.} & 
+\windowfunc & 
+\grammareq & 
+\sqldenserank \ | \ \sqlrank 
+\\[2pt] 
+
+\end{array}
+\]
+\vspace{-15pt}
+\caption{Syntax of our query language.}
+\label{slab:fig:querysyntax}
+\vspace{-20pt}
+\end{figure}
+
+

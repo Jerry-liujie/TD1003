@@ -1,0 +1,635 @@
+\section{Our Approach}\label{gen:sec:approach}
+
+
+
+In this section, we describe our proposed algorithm, which incorporates the lessons presented in \S\ref{gen:sec:insight}.
+
+
+The iterative rewriting pipeline in \genrewrite consists of three core components: (1) suggesting high-quality candidate rewrites, (2) iteratively correcting these rewrites for equivalence, and (3) evaluating their effectiveness. This pipeline closely integrates with \genrewrite's \textbf{Natural Language Rewrite Rule (NLR2) Repository}, enabling improved knowledge transfer and more fine-grained control over the query rewriting process.
+
+% Additionally, it uses a natural language rewrite rule (NLR2) repository to facilitate better knowledge transfer and a more fine-grained control over the rewriting process.
+
+\genrewrite's top-level algorithm is presented in Algorithm~\ref{gen:algo:tool}. Initially, the algorithm takes a set of queries $\mathcal{Q}$ as input for optimization. NLR2 Repository $\mathcal{R}$ may either be initialized as empty or pre-populated with an offline-constructed repository $\mathcal{R}_{pre}$. At each iteration, \genrewrite explores the NLR2 repository to identify the most relevant NLR2s for the target query, integrating them into the rewriting prompt. If no suitable NLR2s are found,\genrewrite defaults to using a basic prompt. The LLM suggests candidate rewrites, accompanied by explanations describing the applied NLR2s and the conditions under which they are applicable. Through iterative correction and feedback mechanisms, \genrewrite progressively converges towards generating more accurate rewrites, thereby largely mitigating the issue of inequivalence. Semantic correction feedback is obtained from language models, while syntax correction relies on feedback from the database. Subsequently, our tool evaluates rewrites for equivalence and performance. Equivalence is assessed using an off-the-shelf tester or verifier, whereas performance is evaluated either by actual execution or by estimation through a database cost model. It also updates the selected rules and their benefits in the NLR2 repository. With each iteration, a larger set of optimized queries and a more comprehensive collection of NLR2s with more precise benefit estimates are obtained. Eventually, once the set of optimized queries stabilizes (or the budget is exhausted), the rewritten queries are presented to the user for final inspection.
+
+% NOTE (dissertation merge): this algorithm was originally written with
+% algorithm2e, which conflicts globally with the algorithmicx package
+% used by the SlabCity and DAGSmith chapters. It has been converted to
+% algorithmicx/algpseudocode syntax; rendering differs slightly from
+% the published paper (no ruled box / per-line numbers style of
+% algorithm2e), but content is identical.
+\begin{algorithm}[t]
+  \caption{\genrewrite top-level Algorithm}\label{gen:algo:tool}
+  \begin{algorithmic}[1]
+  \Require{$\mathcal{Q}$: queries, $\mathcal{L}$: LLM, $\mathcal{D}$: database, $\mathcal{T}$: tester, $B$: budget,
+   $\theta$: user-specified minimum desirable speedup}
+  \Ensure{$\mathit{Res} = \{\langle q, q', e\rangle | \forall q \in \mathcal{Q}_{opt} \subseteq \mathcal{Q}$, where $\mathcal{Q}_{opt}$ is the optimizable subset of $\mathcal{Q} \}$: Optimized queries \& associated NLR2s}
+  \State $\mathit{Res} \leftarrow \{\}$
+  \State $\text{NLR2 Repository } \mathcal{R} \leftarrow \{\}  \text{ or pre-built repository } \mathcal{R}_{pre}$
+  \While{$\mathcal{Q}$ is not empty}
+    \ForAll{queries $q$ in $\mathcal{Q}$}
+        \State $\tilde{q}, e \leftarrow$ Suggest-and-explain ($q, \mathcal{L}, \mathcal{R}$)
+        \State $q' \leftarrow$ Correct-for-equivalence ($q, \tilde{q}, \mathcal{L}, \mathcal{D}$)
+        \State $equiv, speedup \leftarrow$ Evaluate-rewrite ($q, q', \mathcal{D}, \mathcal{T}$)
+        \If{$equiv$ is true}
+            \State $\mathcal{R} \leftarrow$ Update-NLR2-repo ($\mathcal{R}, e, speedup$)
+            \If{$speedup > \theta$}
+                \State $\mathit{Res}$.add ( $\langle q, q', e\rangle$ )
+            \EndIf
+        \EndIf
+    \EndFor
+    \If{$\mathit{Res}$ does not change \emph{\textbf{or}} budget $B$ is exhausted}
+        \State \Return{$\mathit{Res}$}
+    \EndIf
+    \State Remove queries in $\mathit{Res}$ from $\mathcal{Q}$
+  \EndWhile
+  \end{algorithmic}
+\end{algorithm}
+\inv
+
+\begin{figure}[t]
+\inv
+  \centering
+  \fbox{
+    \begin{minipage}{0.8\linewidth}
+        % This is a block of text inside a box in a figure in \LaTeX.
+      % \textcolor{blue}{[input query]}\\
+      \colorbox{gray!10}{[Input query]}\\
+      Rewrite this query to improve performance. Only use this rule when rewriting: \colorbox{gray!10}{[a selected NLR2]}
+
+      % \textcolor{blue}{[a selected NLR2]}
+    \end{minipage}
+  }
+  \inv
+  \captionsetup{font=small,name=Figure}
+  \caption{A prompt incorporating a selected NLR2.}
+  \label{gen:fig:prompt_with_nlr2}
+  \inv
+\end{figure}
+\inv
+
+
+
+
+
+% For each input query, we employ an LLM to generate candidate rewrites. Simultaneously, we log the associated NLR2s and conditions for each rule's application. If a rewrite proves effective, it is uploaded to the rule repository, where its benefit is updated. Different from the zero-shot setting in base case, we actively search the Rule Repository for the most promising NLR2s to include as hints in the prompt, thereby enhancing the guidance for candidate generation. Subsequently, by iteratively refining the candidates and incorporating feedback mechanisms, \genrewrite can progressively converge towards generating more accurate rewrites, thereby largely alleviate the issue of inequivalence. Semantic refinement feedback is sourced from LLMs, while syntactic refinement relies on the database for feedback. In light of limited time budget of DBAs, we prioritize the most promising rewrites for their review based on the benefit of applied NLR2s. 
+
+\subsection{\genjie{Natural Language Rewrite Rules (NLR2s)}}
+\label{gen:sec:approach:nlr2}
+
+Since basic prompts do not consistently yield effective results, especially for highly complex queries, it is essential to incorporate proper hints into the prompt to guide the LLM. In \genrewrite, hints are represented as  \textbf{Natural Language Rewrite Rules (NLR2s)}. The corresponding prompt format is presented in Figure~\ref{gen:fig:prompt_with_nlr2}.
+
+\genjie{
+NLR2s encapsulate beneficial rewrites using natural language, differing fundamentally from traditional pattern-matching rewrite rules, which define a pattern-matching transformation and constraints specifying when that transformation is safe. Instead, NLR2s offer greater flexibility and expressiveness, as they are not restricted to matching fixed patterns but can capture nuanced, contextual insights into when and how a query should be rewritten.}
+
+
+
+
+
+
+
+% \vspace{-10pt}
+
+\genhead{\genjie{Examples of NLR2s} } 
+Table~\ref{gen:tab:nlr2-speedups} highlights three example NLR2s that yield significant speedups for Q11 (Listing~\ref{gen:listing:q11}). These transformations are mutually exclusive, each producing a distinct query structure and logical flow. Notably, the NLR2 addressing \sqlunionallcolor redundancy in Section~\ref{gen:sec:motivation} corresponds to  $r_3$. The remaining two transformations leverage different early data filtering ideas, reducing the size of intermediate results and enhancing overall efficiency. None of these transformations can be captured by existing pattern‐matching rules. 
+
+
+
+
+
+% \inv
+ We meticulously curate a set of NLR2s in the NLR2 repository. These NLR2s fulfill a dual role: they act as both guiding hints for LLMs and explanations for users. When incorporated into the prompts for LLMs, these rules provide appropriate guidance for the rewriting direction. Meanwhile, presenting these NLR2s to users can help them to better understand the rationale behind the proposed modifications.  \genjie{With the prompt in Figure~\ref{gen:fig:prompt_with_nlr2}, LLMs prioritize implementing the provided NLR2s over relying on own creativity. The quality and relevance of these NLR2s directly impacts the effectiveness of the rewrites. However, } 
+manually analyzing each query and formulating effective NLR2s is impractical. Therefore, there is a need for an automated pipeline to identify promising NLR2s.
+
+
+
+\begin{table}[tbp]
+\inv
+    \centering
+    \small
+    \renewcommand{\arraystretch}{1.2} % Increase row height
+    \setlength{\tabcolsep}{6pt} % Increase column padding
+    \begin{tabular}{|l|l|l|}
+        \hline
+         & \textbf{NLR2} \textbf{as Rewrite/Transformation hints} & \textbf{Speedup} \\
+        \hline
+        r1 & Split aggregated computations by filtering  & 24.5x \\
+           & on the specific period in separate subqueries & \\
+        \hline
+        r2 & Combine multiple self-joins by pivoting  & 11.7x \\
+           & aggregated data into columns using CASE & \\
+        \hline
+        r3 & Eliminate union operations by computing  & 9x \\
+           & aggregates in dedicated subqueries per data source & \\
+        \hline
+    \end{tabular}
+    \captionsetup{font=small,name=Table}
+    \caption{Natural Language Rewrite Rules (NLR2s) that benefit TPC-DS Q11 query with their corresponding speedups.}
+    \inv
+    \label{gen:tab:nlr2-speedups}
+\end{table}
+
+
+
+
+
+
+
+% \subsubsection{\textbf{Collecting NLR2s}}
+
+
+
+
+\genhead{Collecting NLR2s} 
+% In order to maximize the efficacy of LLMs, the NLR2 we provide as the hint should be easily understood by the LLM. We adopt a simple but effective method of collecting useful NLR2s: let the LLM summarize 
+ Our approach is simple yet effective: we prompt the LLM to generate candidate rewrites while simultaneously summarizing the underlying NLR2s. If a rewrite proves effective in subsequent evaluations, we consider its associated NLR2 valuable and store it—along with the corresponding query features and observed speedup—in the NLR2 Repository for future use. We will discuss NLR2 evaluation and query feature extraction  later. To elicit rewrite rules, we append the instruction ``Describe the rewrite rules you are using'' to the basic prompt template in Figure~\ref{gen:fig:basic_prompt}. Moreover, if extracted NLR2s contain concrete column or table names, they may degrade the quality of future rewrites. To mitigate this, we explicitly instruct the LLM to exclude query-specific details by adding ``do not include any specific query details in the rules, e.g., table names, column names'' to the prompt, ensuring the NLR2s remain as general and reusable as possible.
+% Due to the stochastic nature of LLMs, even with the same NLR2, the model may produce slightly different rewrites $q'$ across runs.
+
+
+
+% Ideally, with an $nlr2$, the LLM can connect the input query $q$ with a faster rewrite $q'$. Our idea is simple yet effective: we let the LLM generate candidate rewrites and summarize the underlying NLR2s simultaneously. If a rewrite proves effective in subsequent evaluations, its corresponding NLR2 is considered highly beneficial and we will save the NLR2 along with the corresponding query feature and speedup ratio in the NLR2 Repository for further use. We defer the discussion on assessing the effectiveness of NLR2s and extracting query features to a later section. Specifically, We leverage the LLM itself to generate the NLR2s used in the rewrite by appending the instruction ``Describe the rewrite rules you are using'' to the basic prompt template in Figure~\ref{gen:fig:basic_prompt}. Note that even with same $nlr2$, the LLM may generate slightly different rewrites $q'$ across rounds due to the inherent randomness of the LLMs.
+
+% We leverage the LLM itself to generate the NLR2s used in the rewrite by appending the instruction ``Describe the rewrite rules you are using'' to the basic prompt template in Figure~\ref{gen:fig:basic_prompt}. This revised prompt allows us to simultaneously collect NLR2s and generate candidate rewrites. If a rewrite proves effective in subsequent evaluations, its corresponding NLR2 is considered highly beneficial and we will save the NLR2 along with the corresponding query feature and speedup ratio in the NLR2 Repository for further use. We defer the discussion on assessing the effectiveness of NLR2s and extracting query features to a later section.
+
+
+
+
+
+
+
+
+% in the promp
+% To ensure the extracted NLR2s remain as general as possible, we explicitly instruct the LLM to exclude query-specific information by adding \texttt{``do not include any specific query details in the rules, e.g., table names, column names, etc).''}
+
+
+
+
+
+
+\genhead{Measuring the Benefit of NLR2s} In traditional query optimization, multiple rewrite rules can be applied on the same query as long as the changes they make do not conflict with each other. Similarly, we may collect multiple NLR2s associated with one candidate rewrite $q'$. In our experiments on the TPC-DS benchmark, we observe that each rewrite typically corresponds to 3–6 NLR2s. However, both generating rewrites with LLMs and executing complex queries can be computationally expensive. It is therefore essential to prioritize NLR2s that yield meaningful performance gains and avoid wasting resources on ineffective ones.
+
+We observe two key challenges that hinder efficient and accurate estimation of an NLR2’s benefit.
+
+% However, both generating rewrites with LLMs and executing complex queries can be computationally expensive. It is therefore essential to prioritize NLR2s that yield meaningful performance gains and avoid wasting resources on ineffective ones.
+% For a query in TPC-DS benchmark, this number is in the range of 3 and 6.
+% Utilizing LLMs for complex tasks like query rewriting and running complex queries can both  be costly. Therefore, it is crucial to avoid spending resources on NLR2s that offer little to no improvement.
+% We observe two problems that make this benefit estimation process hard and inefficient.
+% We need to evaluate the benefits of individual NLR2s and identify the most effective ones for future rewrites.
+
+
+
+
+
+
+\genhead{Observation 1} A single rewrite $q'$ is often associated with multiple NLR2s, each affecting query performance differently. This makes it challenging to pinpoint the precise contribution of each rule to any observed performance improvement. Assuming that all NLR2s associated with the same rewrite are equally effective is unrealistic and could undermine the  effectiveness of our prompting strategy.
+
+\genhead{Observation 2} Two NLR2s can be functionally identical despite having different descriptions. For example, the NLR2s in Table~\ref{gen:tab:similar_rules} all target the same performance issue caused by correlated subqueries. Failing to recognize such equivalence can lead to redundant evaluations, wasting both resources and time.
+
+
+\begin{table}[tbp]
+\inv
+    \renewcommand{\arraystretch}{1.25} % Adjust the value to increase or decrease the row height
+    \centering
+    \small
+    \begin{tabular}{|c|p{9cm}|}
+        \hline
+        $r_a$ & Replace the correlated subquery with a precomputed aggregate in a separate CTE \\
+        \hline
+        $r_b$ & Use common table expressions (CTEs) to precompute aggregates \\
+        \hline
+        $r_c$ & Replace a correlated subquery that computes an aggregate with an inline view (or common table expression) that pre-aggregates data \\
+        \hline
+        $r_d$ & Replace a correlated subquery with a CTE for aggregated values \\
+        % \hline
+        % 5 & Use explicit join conditions. \\
+        % \hline
+        % 6 & Move conditions from WHERE clause to ON clause in JOINs. \\
+        \hline
+    \end{tabular}
+    \captionsetup{font=small,name=Table}
+    \caption{Examples of a set of  NLR2s that are semantically equivalent to each other}
+    \label{gen:tab:similar_rules}
+    \inv
+\end{table}
+
+% miscalculating the utility of specific NLR2s. Consider a scenario where applying Rule A from Table~\ref{gen:tab:similar_rules} to a query results in a 1000x speedup, while applying Rule B to another query yields no noticeable difference. One might mistakenly conclude that Rule A is significantly more valuable than Rule B. However, these two rules should be regarded as one. Recognizing this helps us better understand the potential impact this NLR2 has in different contexts. 
+
+
+
+
+We introduce two techniques to address the issues mentioned above: \textbf{\textit{plan-based dominant NLR2 identification}} and \textbf{\textit{NLR2 grouping via LLMs}}.
+
+
+\genhead{Plan-based dominant NLR2 identification} 
+When the LLM produces a faster rewrite $q'$ for a given input query $q$, it also returns a set of associated NLR2s, denoted as $\{r_1, r_2, \ldots, r_k\}$. Instead of treating all rules equally, we aim to identify a single dominant NLR2, denoted $r^*$, that primarily accounts for the observed performance gain. This allows us to attribute the speedup to the most impactful transformation, rather than distributing credit uniformly across all contributing rules. To identify the dominant NLR2 $r^*$, we prompt the LLM with each NLR2 individually on the same input query $q$, producing candidate rewrites ${q_{r_1}, q_{r_2}, \ldots, q_{r_k}}$. For each $q_r$, we obtain its query plan $P(q_r)$ via \texttt{EXPLAIN} (which reports the plan without executing the query) and compare it to the plan of $q'$, denoted $P(q')$. \revone{We first check for an exact cost match: if there exists a rule $r$ such that the optimizer’s cost estimate for $q_r$ equals that of $q'$ (i.e., $\mathcal{C}(q_r)=\mathcal{C}(q')$), we set $r ^* = r$, since identical costs typically indicate identical plans. Otherwise, we choose the NLR2 whose plan is most similar to $P(q')$:}
+    \[
+    \revoneeq{
+    {r^*=\arg \min _{r \in \mathcal{R}} d_{\text {plan}}\left(P\left(q_r\right), P\left(q^{\prime}\right)\right)
+    }}
+\]
+\noindent\revone{where plan similarity is measured by embedding each \texttt{EXPLAIN} plan using \texttt{bert-base-uncased} and taking the $\ell_2$ distance between the embeddings: $d_{\text {plan }}\left(P_1, P_2\right)=\left\|\phi\left(P_1\right)-\phi\left(P_2\right)\right\|_2$.} We then attribute the observed speedup of $q'$ over $q$ to $r^*$ and treat that improvement as the estimated benefit of the dominant rule.
+
+
+    % where plan similarity is defined as follows. We take the textual \texttt{EXPLAIN} output for each plan, encode it with \texttt{bert-base-uncased} (evaluation mode), extract the final-layer \texttt{[CLS]} embedding $\phi(\cdot)\in\mathbb{R}^{768}$, and compute
+
+
+
+    \begin{comment}
+        
+    
+    
+    to generate a set of rewrites $\{q_{r_1}, q_{r_2}, \ldots, q_{r_k}\}$. We then use the \texttt{EXPLAIN} command to obtain the query plans for each rewrite and compare them to the plan for $q'$. \texttt{EXPLAIN} provides query plan information without actually running the query. We designate the dominant rule $r^*$ as follows. If there exists a rule $r$ whose cost estimate equals that of $q'$ (i.e., $\mathcal{C}(q_r) = \mathcal{C}(q')$), we set $r^* = r$ (intuitively, identical estimates typically arise when the plans coincide). Otherwise,
+\[
+r^*=\arg \min _{r \in \mathcal{R}} d_{\text {plan}}\left(P\left(q_r\right), P\left(q^{\prime}\right)\right),
+\]
+where $P(\cdot)$ is the query plan and $d_{\text {plan}}$ is the $\ell_2$ distance between BERT embeddings of the plan strings.
+
+
+\textbf{Plan-similarity computation.}
+\begin{enumerate}
+    \item Obtain textual EXPLAIN plans for $q_r$ and $q'$.
+    \item Encode each plan string with \texttt{bert-base-uncased} in eval mode and use the final-layer \texttt{[CLS]} vector as $\phi(\cdot)\in\mathbb{R}^{768}$. 
+    \item Define $d_{\text {plan }}\left(P_1, P_2\right)=\left\|\phi\left(P_1\right)-\phi\left(P_2\right)\right\|_2$.
+\end{enumerate}
+
+The NLR2  whose rewrite produces the query plan most similar to that of $q'$, or whose cost estimate is closest, is designated as the dominant rule $r^*$. We then attribute the speedup ratio of $q'$ over $q$ to $r^*$, treating this performance gain as the estimated benefit of the dominant NLR2 $r^*$.
+
+\end{comment}
+
+
+
+% We provide one NLR2 at a time as the hint to the LLM for the same input query $q$, resulting in rewrites $\{q_{r_1}, q_{r_2}, \ldots, q_{r_k}\}$. Then we run "EXPLAIN" command on them to get their query plan and compare them with $q'$ query plan. The NLR2 leads to the most similar query plan or closest cost estimate is considered as $r^*$, the dominant NLR2 for $q$.
+
+% \texttt{EXPLAIN}
+
+% When a performance boost is achieved on some queries, instead of assigning equal importance to all NLR2s suggested by the LLM, we identify one $nlr2$ as the dominant NLR2 that is the main cause of the speedup.
+
+
+
+% evaluate the effectiveness each NLR2 individually. By providing only one NLR2 at a time as a hint to the LLM and comparing its speedup to the speedup achieved when all NLR2s are combined, we can determine the exact contribution of each rule to performance improvements.
+
+% This approach maximizes the utility of existing query execution history for efficient evaluation and avoids executing each generated rewrite $\{q_{r_1}, q_{r_2}, \ldots, q_{r_k}\}$ against the data. Note that this approach is a simplified assumption of the actual case: there are interdependencies among rules. In certain scenarios, applying one rule might not directly yield a notable speedup but could enable the application of other useful rules. Thus, isolating rules for testing might fail to capture their collective impact. However, evaluating all possible combinations would be prohibitively expensive. Therefore, identifying the dominant NLR2 by separate evaluation is a feasible solution. 
+
+\revone{The identification process relies on exactly one piece of execution, i.e., the improved rewrite $q'$, which serves as the anchor. We do not execute any additional candidate rewrites ${q_{r_1}, q_{r_2}, \ldots, q_{r_k}}$; instead, we rely on inexpensive plan and cost comparisons.} This assumption of a single dominant NLR2 rewrite simplifies the real-world scenario, where interactions between rules can occur. In practice, a single rule may yield little benefit in isolation but unlock further optimizations when combined with others. However, exhaustively evaluating all rule combinations is computationally prohibitive. Our method offers a scalable approximation.
+
+
+
+% This approach leverages existing query execution history to efficiently evaluate candidate rewrites ${q_{r_1}, q_{r_2}, \ldots, q_{r_k}}$ without executing each against the database. While this method simplifies the real-world scenario, where interactions between rules may exist, it offers a practical tradeoff. In some cases, a single rule may yield little benefit in isolation but unlock further optimizations when combined with others. Exhaustively evaluating all rule combinations, however, is computationally infeasible. Thus, identifying the dominant NLR2 through independent evaluation provides a scalable and effective approximation.
+
+
+\begin{figure}[t]
+\sinv
+  \centering
+  \small
+  \fbox{
+    \begin{minipage}{0.9\linewidth}
+      \textbf{Input:}\\
+      % Replace implicit joins with explicit joins \textcolor{blue}{$\leftarrow$the incoming NLR2}  \\
+      Replace implicit joins with explicit joins \textcolor{blue}{$\leftarrow$the incoming NLR2}  \\
+    Please select the rewrite rule that is strictly the same as the above rule and give your explanation (just give one answer). If not, please select the first item “Unseen rule”.\\
+    Options:\\
+1. Unseen rule\\
+2. Replace subqueries with join\\
+3. Use explicit join syntax instead of comma-separated tables in the from clause\\
+4. Use a CTE to calculate the average
+
+\textbf{Answer:}\\
+Use explicit join syntax instead of comma-separated tables in the from clause \textcolor{blue}{$\leftarrow$LLM's choice after reasoning}
+
+Explanation: Both the original rule and this rewritten rule are about replacing implicit joins with explicit joins. \textbf{Implicit joins are indicated by comma-separated tables in the FROM clause and join conditions in the WHERE clause}. ...
+      
+    \end{minipage}
+  }
+  \inv
+  \captionsetup{font=small,name=Figure}
+  \caption{The prompt to predict the group to which the incoming NLR2 belongs}
+  \label{gen:fig:clustering}
+  \inv
+\end{figure}
+
+
+
+
+\genhead{NLR2 grouping via LLMs} 
+While plan-based dominant NLR2 identification efficiently leverages query execution history to avoid running expensive queries on real data, repeatedly invoking the LLM on $q$ with different NLR2s as hints incurs a noticeable amount of API cost. As noted in \textbf{Observation 2}, the set of NLR2s extracted from a single query $q$ are often not sufficiently distinctive. Supplying semantically equivalent hints to the LLM yields little additional benefit while unnecessarily increasing the costs. To address this, every time a new NLR2 $r_{\text{new}}$ is discovered for query $q$, we leverage LLMs to determine its semantic equivalence to existing NLR2s associated with $q$. If it is deemed equivalent to a previously identified group, we avoid invoking the LLM again for that rule; otherwise, a new group is created for $r_{\text{new}}$, and we proceed to run the LLM rewriting pipeline to generate the corresponding rewrite $q_{r_{\text{new}}}$ and obtain its query plan. This allows us to evaluate whether $r_{\text{new}}$ qualifies as the dominant NLR2 for query $q$.
+
+% To evaluate the effectiveness of a specific NLR2 on a given query, we include it in the prompt, then run the query through the iterative correction process by LLMs, and finally measure its latency via actual execution. Although this pipeline is both time- and cost-intensive, it enables us to discover rewrite opportunities that can later be converted into database rules if they offer significant benefits. However, invoking LLMs on queries following the same template may yield a collection of NLR2s that are not sufficiently distinctive. Repeatedly feeding semantically equivalent NLR2s to the same query does not provide any additional benefit but only increases the overall computational and cloud database costs.
+
+
+% , thereby identifying the appropriate group for it. If the LLM finds no semantically equivalent candidate, a new group is created for the NLR2. 
+
+ Figure~\ref{gen:fig:clustering} illustrates an example prompt used for this grouping process. Replacing implicit joins with explicit joins hardly yields any noticeable performance gap, yet such transformations are often included among the collected NLR2s. Grouping NLR2s not only prevents redundancy in our repository but also simplifies maintenance and ensures that our efforts are concentrated on rewrite strategies that deliver substantial performance gains.
+
+
+
+
+
+
+
+
+
+
+
+
+\begin{comment}
+    
+
+
+
+
+\subsubsection{\textbf{Estimating the Utility Score of NLR2s.}}
+
+
+Compared to traditional pattern-matching rewrite rules, NLR2s, when combined with powerful LLMs, offer higher flexibility and expressiveness by understanding the intent of the original query. However, the lack of rigor can also cause problems. We observe that it is common for two NLR2s to be essentially the same while their descriptions are quite different. For instance, NLR2s in Table ~\ref{gen:tab:similar_rules} are actually identical despite their different descriptions, as they all involve replacing implicit joins with explicit joins. If we fail to identify their relations, we would miscalculate the utility of  specific NLR2s. Consider a scenario where applying Rule 1 in Table 1 on a query results in a 1000x speedup, while applying Rule 2 on another query yields no discernible difference. In such a case, one might mistakenly conclude that Rule 1 is much more valuable than Rule 2. However, these two rules should be regarded as one, and we should realize that this rule can provide a substantial performance boost in certain instances while making no differences in others. In addition, by grouping semantically equivalent NLR2s together, we obtain a larger sample size to estimate the utility score of the NLR2, significantly reducing estimation errors.
+
+
+The grouping of NLR2s consists of two steps: (1) k-nearest neighbor (k-NN) search based on NLR2s' embeddings and (2) group prediction by the LLM. Solely relying on embedding model leads to inaccurate grouping results. For instance, ``Remove unnecessary columns from the GROUP BY clause'' and ``Remove unnecessary table joins'' are neighboring rules in embedding space but have distinct focuses and cannot be grouped together.  This issue can be largely addressed by LLMs with advanced reasoning ability. However, using the LLM to check the equivalence of every pair would be prohibitively costly. Hence, we employ k-NN search to propose candidates and leave the final decision to the LLM, aiming to strike a balance between efficiency and effectiveness.
+
+
+ \genhead{k-Nearest Neighbor Search} Our observation is that NLR2s, which are essentially identical, often share common or semantically related words and are proximate in the embedding space.  We employ \textit{bert-base-uncased} as our embedding model. Its ability to generate dense matrices facilitates the calculation of Euclidean distances between similar vectors.
+ 
+ 
+ When a new NLR2 is added into the repository, we calculate the Euclidean distance between its embedding and those of existing NLR2s, selecting the top-k most similar NLR2s as candidates for the LLM's subsequent evaluation. Note that each of the top-k most similar NLR2s should come from different groups for two reasons (1) Comparing two equivalent NLR2s to an incoming  rule is computationally inefficient. (2) Deduplication enhances the diversity of candidate rules presented to the LLM, allowing LLM to correct any inaccuracies introduced by the embedding model.
+ 
+ %, as their results are very likely to be the same (otherwise, the LLM may have made a mistakes).
+
+\genhead{Group Prediction by the LLM} Given top-k most similar NLR2 as candidates, the LLM determines
+which one is semantically equivalent to the target NLR2 and thus which group it belongs to. If the LLM find none of the candidates equivalent, a new group will be created for it. One example prompt is shown in Figure ~\ref{gen:fig:clustering}.
+
+% finally determines the specific group it belongs to, or whether a new group needs to be created for it.
+
+
+
+Chain-of-Thought (CoT) prompting is a technique used to guide LLMs in solving complex tasks by breaking them down into intermediate steps. Instead of asking the model to directly output the final answer, CoT prompting encourages the model to generate a sequence of thoughts or reasoning steps that lead to the final answer. This approach can significantly improve the model's performance on tasks requiring reasoning. We adopt this idea, explicitly pushing the LLM to reason by using “give your explanation” indications in the prompt. In our example, the LLM correctly matches the target NLR2 to candidate No.3. It explains its choice by pointing out a key intermediate step: ``Implicit joins are indicated by comma-separated tables in the FROM clause and join conditions in the WHERE clause'', which is one of the general knowledge encoded in the model. This shows how well LLMs can reason through problems, using general knowledge to support each step of their thinking.
+
+
+
+
+Once a candidate rewrite passes the equivalence checking, the associated NLR2s undergo the above grouping process to be categorized into a specific rule group. Subsequently, we assess the rewrite's effectiveness and update the rule group's utility score based on the newly observed performance improvement or regression.
+
+However, accurately estimating utility score of an NLR2 is challenging for several reasons: Firstly, a candidate rewrite usually corresponds to multiple NLR2s, necessitating individual tests for each rule on the input query to ascertain its specific contribution to performance improvements. This process can be very resource-intensive. Secondly, NLR2s may exhibit interdependencies; in certain scenarios, applying one rule might not directly yield a notable speedup but could open up the possibility of applying other useful rules. Thus, the combined application of NLR2s is essential for realizing their full benefit, and isolating rules for testing fails to capture their collective impact. Testing all possible combinations, however, would be prohibitively expensive. Thirdly, the benefit of applying a NLR2 varies within each query, suggesting that the rule's benefit should ideally be modeled as a function of the input query. This approach require a comprehensive training set with a variety of queries. 
+
+To alleviate these issues, we employ a straightforward yet effective method for estimating the benefit of the rule group. Instead of doing individual tests to determine its specific contribution, we assume that the observed speedup from a candidate rewrite relative to the input query is the benefit of each associated NLR2 independently and is used to update the benefit of the corresponding rule group. For instance, if $q'$ is the candidate rewrite for $q$, which achieves a 10x speedup, and rewriting $q$ to $q'$ involves three NLR2s $\{r_1, r_2, r_3\}$, we assume that each rule $(r_1,r_2,$ and $r_3)$ could independently facilitate a 10x speedup for this specific query. To estimate the overall benefit of this group, we calculate the geometric mean of the speedup ratios of all the NLR2s within the group. The geometric mean is preferred due to its modest sensitivity to outliers compared to arithmetic mean and harmonic mean. The assumption we made simplifies the estimation process without significantly compromising the accuracy of our estimates. Even if we overestimate the benefit of a less impactful rule under our assumption (attributing the performance boost to this rule when another is the key factor), the overall estimate is balanced by the aggregate performance across various cases within the workload.
+
+\end{comment}
+
+
+
+
+\subsection{Suggesting Candidate Rewrites}
+\label{gen:sec:approach:suggest}
+
+In the previous section, we discussed how to construct a high-quality NLR2 Repository over time. The primary goal of this repository is to enable effective knowledge transfer, particularly for optimizing complex queries that vanilla LLM-based approaches fail to handle. However, NLR2s that yield substantial speedups for certain queries may degrade performance when applied to others. A key challenge, therefore, is to identify queries that share similar performance bottlenecks, so that we can selectively incorporate the most relevant NLR2s from the repository into the prompt for effective and \revone{equivalent} rewriting.
+
+\genhead{Query performance bottleneck analysis}
+Since we focus on optimizing recurring queries with readily available query plans, we aim to extract as much insight as possible from these plans. To this end, we leverage LLMs to inspect query plans and identify potential performance bottlenecks. Prior to analysis, we preprocess each plan to remove irrelevant fields, thereby reducing the number of tokens and minimizing distractions from non-essential details. For example, in PostgreSQL, eliminating over 20 unnecessary fields can reduce token count by up to 43\%. We then provide the LLM with the prompt consisting of three components: the original query $q$, the trimmed query plan, and a concise instruction: “Summarize the most critical performance bottleneck based on the query and its plan.”
+It is important to note that the query plans used for bottleneck analysis are retrieved from execution history and include actual runtime metrics (e.g., actual time, rows, loops) for each node. In contrast, the plans used for identifying dominant NLR2s only include the planner’s chosen execution plan and its estimated costs, without any observed runtime statistics.
+
+
+\genhead{Similarity search}
+Using the bottleneck summary generated by the LLM, we perform a two-stage similarity search to identify relevant past queries. (1) we encode the bottleneck summary into a feature embedding and retrieve the top-$k$ most similar embeddings from previously analyzed queries. (2) we apply a refinement step inspired by the method illustrated in Figure~\ref{gen:fig:clustering}: we prompt the LLM with a multiple-choice question to identify which of the retrieved candidates shares the most similar performance bottleneck with $q$.  If the LLM determines that none of the candidates are a good match, the system falls back to using the basic prompt without incorporating any prior NLR2. Based on the selected candidate, we then retrieve and apply its most beneficial associated NLR2.
+
+
+% Since we focus on optimizing recurring queries with readily available query plans, we make the efficient use of these plan information to get as much insight as possible. We leverage LLMs to summarize the query plan and identify performance bottlenecks. Given a query plan, we first preprocess it to remove irrelevant information, reducing the number of tokens processed and preventing LLMs from being distracted by non-essential details. For instance, we can remove 20+ fields from query plan generated by Postgres and redcue the number of tokens by 43\%. Using the bottleneck summary derived by LLMs, we perform a two-stage search: (1) transforming the summary into feature embeddings to retrieve the top-k most similar embeddings, and (2) applying the technique illustrated in Figure~\ref{gen:fig:clustering} to allow the LLM to determine which candidate has the closest bottleneck. Finally, we select the NLR2 with the highest potential benefit for the given query.
+
+% We discuss how to build a high-quality NLR2 Repository over time in the above section. However, the goal of building such a NLR2 Repository is to facilitate better knowledge transfer and help optimize those complex queries that vanilla LLM approach cannot address. One key challenge is to identify queries sharing the same performance bottleneck so that we can optimize using similar strategy.
+
+% \genhead{Selecting NLR2s as Hints} NLR2s that provide a 100× speedup for some queries may slow down others. Since rewrite rules are not universally applicable, each query requires tailored rules to achieve optimal performance. Therefore, it is crucial to identify similar queries—those that can be optimized using the same strategy or, in other words, have the same performance bottlenecks. This raises a key challenge in our system: how to determine which queries are similar to a given query.
+
+% Since we focus on optimizing recurring queries with readily available query plans, we leverage LLMs to summarize the query plan and identify performance bottlenecks. This enables us to select the most suitable and tailored NLR2s for improving query performance.
+
+
+
+
+
+
+\cut{Since simple zero-shot prompts do not consistently yield effective results, especially for highly complex queries, it is essential to incorporate proper hints into the prompt to guide the LLM. In \genrewrite, hints are represented as a set of  NLR2s. }
+
+
+\cut{\textbf{Natural Language Rewrite Rules (NLR2s)} differ fundamentally from traditional pattern-matching rewrite rules. A traditional rewrite rule is comprised of two key components: (1) a transformation that maps a source query pattern to a corresponding destination query pattern, and (2) a set of constraints under which the rule can be safely applied. These pattern-matching rules are typically described using a domain-specific language, which can be challenging for both humans and LLMs to understand. Directly integrating rules presented in the internal language as rewrite hints therefore do not provide the necessary guidance for the LLM. Instead, our NLR2s briefly summarize beneficial rewrites or transformations in natural language. Compared to pattern-matching rewrite rules, NLR2s offer enhanced flexibility and expressiveness. Below are some example NLR2s used in \genrewrite:}
+
+% \begin{itemize}
+% \item Pre-calculate aggregates in subqueries
+% \item Remove unnecessary UNION ALL operation
+% \item Avoid using arithmetic operations in WHERE clause
+% \item Replace implicit JOINs with explicit JOINs
+% \item ...
+% \end{itemize}
+
+
+ \cut{Figure~\ref{gen:fig:hints} shows an example prompt that is used to suggest candidate queries.}
+  
+  % as hints for LLMs to consider. These rules are human-readable, serving as explanations for the rewriting process alongside the rewrite candidates. Therefore, NLR2s are both hints and explanations. When presented as rewrite hints in the prompt to LLMs, these rules provide appropriate guidance. When presented as explanations alongside the rewrite candidates, users gain a clearer understanding of the transformations made to the input queries.  
+
+\cut{Since manual inspection is often not feasible due to the limited time budget of human experts, we must devise a method to learn from the past instances, and automatically generate appropriate hints with minimal human intervention.}
+
+
+
+
+
+
+% Zero-shot prompts are effective for a large set of queries but may struggle with highly complex queries. To enhance performance, additional guidance should be integrated into the prompt to assist LLM in generating more promising rewrites. However, relying solely on human experts for guidance is impractical. Instead, we aim to leverage an automated sources -- LLM, to provide the necessary guidance. More specifically, we need to automatically learn useful NLR2s from the instances LLMs can successfully solve and see if they can be utilized to optimize queries that LLM previously failed to solve. Figure~\ref{gen:fig:hints} shows an example prompt that is used to suggest candidate queries. 
+
+
+
+
+% \subsubsection{\textbf{Collecting NLR2s.}}
+
+% instruct the LLM to describe the rewrite rules involved in rewriting the input query to the rewrite it presents
+
+
+
+
+
+
+
+
+
+\begin{figure}[h]
+\sinv
+  \centering
+  \small
+  \fbox{
+    \begin{minipage}{0.9\linewidth}
+        % This is a block of text inside a box in a figure in \LaTeX.
+        \textbf{Input:}\\
+      q1:\colorbox{gray!10}{[Input query]}\\
+      q2:\colorbox{gray!10}{[Candidate rewrite]}\\
+      q1 is the original query, q2 is the rewritten query of q1.\\For q1, break it down step by step and then describe what it does in one sentence. Do the same for q2.\\
+      Give an example, using tables, to show that these two queries are not equivalent if there's any such case. Otherwise, just say they are equivalent.\\
+      \textbf{Answer:}\\
+      Not equivalent. \\
+      \colorbox{gray!10}{[Breakdown and analysis with \textbf{counterexamples}]} \\
+      % $\{$Breakdown and analysis$\}$\\
+      % $\{$A counterexample$\}$\\
+      \textbf{Input:}\\
+      Based on your analysis, which part of q2 should be modified so that it becomes equivalent to q1? Show the modified version of q2.\\
+      \textbf{Answer:}\\
+      % \textcolor{blue}{[Revised candidate rewrite]} 
+      \colorbox{gray!10}{[Revised candidate rewrite]}
+      
+      
+    \end{minipage}
+  }
+  \inv
+  \captionsetup{font=small,name=Figure}
+  \caption{The prompt for semantic correction}
+  \label{gen:fig:semantic_correction}
+  \inv
+\end{figure}
+
+
+% for example, LLM would not apply ``remove unnecessary UNION ALL'' to a input query that does not contain UNION ALL
+
+
+\subsection{Correcting Candidate Rewrites}
+\label{gen:sec:approach:correct}
+
+
+Unlike traditional rewrite rules, which are verified for correctness, LLM-generated rewrites lack guaranteed accuracy, even with appropriate rewrite hints. While many tools can assess query equivalence with varying degrees of capability and efficiency, our requirements extend beyond this. Our goal is not only to verify the equivalence of the rewrite to the input query but also to correct the rewrite until it matches the original query. Otherwise, it is inefficient and a waste of computing resources to repeatedly prompt the LLM in hopes of producing a correct rewrite.
+
+Errors generally fall into two categories: 1) Executable with incorrect outcomes, such as a mismatch where the input query aims to find the second-highest salary, whereas the candidate rewrite seeks the highest salary—this type of error is termed a semantic error. and 2) Unexecutable due to various issues, such as incorrect column names or table names—this type is referred to as a syntax error. These two categories of errors are relatively independent of each other. Inspired by these observations, we develop a two-stage counterexample-guided correction approach. During the semantic correction stage, we focus on ensuring that the candidate rewrite achieves the same intent as the input query, while temporarily setting aside syntax errors. In the syntax correction stage, we address all issues impacting query execution.
+
+
+\genhead{Semantic Correction} Given the input query as the gold standard, we iteratively refine each candidate rewrite to ensure convergence toward semantic equivalence. 
+In each iteration, the LLM first summarizes the intent and logic of both the original and candidate queries to understand their respective semantics. It then attempts to identify a counterexample that highlights a divergence in their results, leveraging the extracted summaries and  reasoning. Based on this comparison, the LLM determines whether the candidate rewrite is equivalent to the input query. If deemed ``not equivalent'', the LLM generates a revised version of the candidate query, informed by the identified discrepancies. This revised candidate is evaluated in the next iteration. The process continues until the LLM deems the candidate query equivalent to the input.
+Figure~\ref{gen:fig:semantic_correction} illustrates an example prompt used in the semantic correction phase.
+
+
+
+
+
+
+
+% We adopt the idea of Chain-of-Thought prompting in our design: break down the problem-solving process into smaller, more manageable parts, making it easier for the model to understand and process the query. 
+
+
+% 4 of 10 attempts for Q11 and 6 of 10 for Q74 moved towards a correct rewriting direction.
+
+
+\cut{Using TPC-DS Q11 from Section 2 as an illustration, 4 of 10 rewriting attempts by GPT-4 for Q11 correctly identify the need to eliminate redundant \sqlunionallcolor operations and decompose the CTE into smaller ones. However, none of the rewrites are equivalent and error-free. For intricate queries like Q11, it is particularly challenging for the LLM to match the semantics of the input query precisely while avoiding syntax errors. The initial attempt at rewriting Q11 often results in fewer joins than the correct version, overlooking the essential role of these joins in facilitating the comparison of sales data for the same customer across different years and types of sales. Achieving a good rewrite of Q11 without semantic errors typically requires 1-3 iterations, even then, minor syntax errors  remained, which are addressed during the syntax correction phase.}
+
+
+\genhead{Syntax Correction} 
+% Syntax correction adopts a philosophy similar to semantic correction, with a notable distinction: syntax correction depends on feedback from executing the \texttt{EXPLAIN} command on the candidate rewrite to guide its refinement process. In contrast, semantic correction relies on counterexamples identified by the LLM through logical reasoning. Typical errors addressed include incorrect column or table names and inconsistent table aliases. The use of EXPLAIN, which does not execute the query, minimizes overhead, making it an efficient method for decide whether the rewrite is executable or not.
+Syntax correction is also an iterative process, similar to semantic correction, but with a key distinction: syntax correction depends on feedback from executing the \texttt{EXPLAIN} command on the candidate rewrite to guide its refinement process, while semantic correction relies on counterexamples identified by the LLM through logical reasoning. At each iteration, we prompt the LLM with the original query $q$, the candidate rewrite $q'$, and the error message returned by the \texttt{EXPLAIN} command (if any). Typical errors addressed include incorrect column or table names and inconsistent table aliases. The use of EXPLAIN, which does not execute the query, minimizes overhead, making it an efficient method for deciding whether the rewrite is executable or not.
+
+
+% refine query based on the feedback returned by ``EXPLAIN'' command
+
+\subsection{Evaluating Candidate Rewrites}
+\label{gen:sec:approach:evaluate}
+
+
+Our ultimate goal is to identify equivalent queries that are \emph{faster}, \revthree{without introducing regressions}. To this end, we subject each candidate rewrite to \revthree{two automated gates: a correctness gate and a performance gate.}
+
+\genhead{\revthree{Correctness gate}} We employ a combination of off-the-shelf verifiers and testers, selected based on the available time budget and the query complexity. Specifically, we use SQLSolver~\cite{ding2023proving}, a state-of-the-art SQL verifier, to assess the correctness of generated rewrites. If SQLSolver returns ``UNKNOWN'', we fall back to a tester from SlabCity~\cite{dong2023slabcity}, which extracts execution hints from the input query and applies syntactic analysis to guide input generation. Counterexamples generated during the semantic correction phase can also be incorporated into the tester to enhance coverage. \revthree{If neither the verifier nor the tester can certify equivalence, we abstain and discard the rewrite.}
+
+\genhead{\revthree{Performance gate}} Only candidates that pass the correctness gate proceed to performance evaluation. \revthree{We run an offline shadow execution of  the candidate rewrite against the target database. A rewrite is accepted only if it satisfies a ``never-worse-off'' policy; otherwise, the rewrite is automatically rejected and the system falls back to the original query. We also pre-filter with a static cost proxy to avoid expensive trials.} This procedure is particularly justified for workloads with recurring queries of fixed periodicity. 
+
+\revthree{In the exploratory setting, an optional manual review step can be used to expand coverage, but this is not required for the deployment.}
+
+
+
+
+% . To this end, we evaluates rewrites for both equivalence and performance. For equivalence checking, we employ a combination of off-the-shelf verifiers and testers, selected based on the available time budget and the complexity of the query. Specifically, we use SQLSolver~\cite{ding2023proving}, the state-of-the-art SQL verifier, to assess the correctness of generated rewrites. If SQLSolver returns an ``UNKNOWN'' result for a given query, we fall back to a tester from SlabCity~\cite{dong2023slabcity}, which extracts execution hints from the input query and applies syntactic analysis to guide input generation. Counterexamples generated during the semantic correction phase can also be incorporated into the tester to enhance coverage. For performance evaluation, we collect the actual query latency by executing candidate queries against the database. This is particularly justified for workloads with recurring queries of fixed periodicity (mostly daily or weekly). If both fail to work, we revert to manual inspection for a final check before deployment in the production environment.
+
+ % assess the performance of candidate rewrites against the input query, once they are confirmed as equivalent by the LLM.
+
+
+ 
+
+
+% The first step identifies multiple potential groups an NLR2 could be associated with, while the second step finally determines the specific group it belongs to, or whether a new group needs to be created for it.
+
+
+
+% In Stage 1, we identify multiple potential groups to which a rule may belong by finding the top-k most similar rules from the current NLR2 repository. Subsequently, in Stage 2, the group that exhibits the highest semantic proximity to the target rule is determined by the LLM through reasoning. NLR2s within the same group are equivalent to each other.
+
+
+% \textbf{Embedding Model.}
+% For instance, as shown in Table~\ref{gen:tab:similar_rules}, the equivalent NLR2s consistently involve the SQL keyword ``join''; ``linking tables'' in Rule 3 and ``combining tables'' in Rule 4 are very close in semantics. We map the NLR2s into an embedding space (i.e., numeric vector space), where the distances between vectors reflect the semantic similarity of rules. Choosing a computationally efficient embedding model allows us to preserve accuracy while handling a large number of NLR2s. We employ bert-base-uncased as our embedding model, which is efficient, insensitive to text input length, and generates dense matrices, making it easy to calculate the Euclidean distance between similar vectors. Additionally, we provide users with the flexibility to customize their embedding model as desired.
+
+ % which is efficient and generates dense matrices, making it easy to calculate the Euclidean distance between similar vectors.
+
+ % We compute the Euclidean distance between the incoming NLR2 and exi in the existing NLR2 repository each already assigned a group label. Then we select the top-k similar NLR2s from different groups as candidates for the LLM to choose in the next stage. 
+ 
+%  One may wonder why we do not simply rely on k-nearest neighbor (k-NN) search to assign the new NLR2 to a specific group. We have observed that decisions based solely on similarities between rule embeddings are not always reliable. For instance, ``Remove unnecessary columns from the GROUP BY clause'' and ``Remove unnecessary table joins'' are neighboring rules in embedding space but have distinct focuses and cannot be grouped together; Rule 1 and Rule 3 in Table~\ref{gen:tab:similar_rules} are not close in embedding space yet are semantically equivalent. These problems can be largely addressed by LLMs with strong reasoning ability. However, using the LLM to check the equivalence of every pair of NLR2s would be prohibitively costly. Hence, we employ k-NN search to propose candidates and leave the final decision to the LLM, aiming to strike a balance between efficiency and effectiveness. The value of k has been set to 5 through empirical evaluation.
+
+% It is important to note that each of the top-k similar NLR2s identified through k-NN search should come from different groups. If two rules belong to the same group, the LLM will consider them equivalent. Comparing both of them to an incoming NLR2 is computationally inefficient, as their results are very likely to be the same (otherwise, the LLM may have made a mistake in one of the equivalence checks). Additionally, deduplication enhances the diversity of candidate rules presented to the LLM. For instance, consider a scenario where the top-10 similar NLR2s are from the same group but are not equivalent to the target NLR2, while the actual equivalent NLR2 is ranked immediately outside this top-10. This situation can arise when many queries in the workload are nearly identical, resulting in similar NLR2s being applied for many times. Requiring candidates to come from different groups enables us to identify the correct group for the target rule in such cases.
+
+% After collecting top-k similar NLR2s for the target rule as candidates, each representing the group it belongs to, we let the LLM solve a multiple-choice problem, determining which rule is semantically equivalent to the target, thereby identifying the group to which the target rule should be assigned.\genjie{ above too verbose} It is worth noting that only one rule can be selected during this process. It is possible for the LLM to find none of the candidates equivalent. In these instances, a new group will be created for the rule, indicating it does not align with any existing groups.
+
+\begin{comment}
+    
+The grouping of NLR2s consists of two steps: (1) k-nearest neighbor (k-NN) search based on NLR2s' embeddings and (2) NLR2 group prediction by the LLM. Solely relying on embedding model leads to inaccurate grouping results. For instance, ``Remove unnecessary columns from the GROUP BY clause'' and ``Remove unnecessary table joins'' are neighboring rules in embedding space but have distinct focuses and cannot be grouped together.  This issue can be largely addressed by LLMs with advanced reasoning ability. However, using the LLM to check the equivalence of every pair would be prohibitively costly. Hence, we employ k-NN search to propose candidates and leave the final decision to the LLM, aiming to strike a balance between efficiency and effectiveness.
+
+
+
+
+As discussed earlier, a single rewrite is often associated with multiple NLR2s, making it difficult to determine the exact contribution of each rule to performance improvements, if any.
+
+Compared to traditional pattern-matching rewrite rules, NLR2s, when combined with powerful LLMs, offer higher flexibility and expressiveness in query rewriting. However, the lack of rigor can also cause problems for measuring the benefit of each NLR2 accurately.
+
+\begin{enumerate}[label=(\arabic*)]
+    \item A single rewrite is often associated with multiple NLR2s, making it difficult to determine the exact contribution of each rule to performance improvements, if any.
+    \item  It is common for two essentially the same NLR2s to have different natural language descriptions, further complicating the evaluation. 
+\end{enumerate}
+\end{comment}
+
+
+
+
+\begin{comment}
+    
+
+Table~\ref{gen:tab:all_nlr2} presents an expanded set of beneficial NLR2s, further demonstrating the diversity and generality of the rewriting opportunities uncovered by our approach.
+
+
+
+\begin{table}[tb]
+    \renewcommand{\arraystretch}{1.25} % Adjust the value to increase or decrease the row height
+    \centering
+    \footnotesize
+    \inv
+    \begin{tabular}{|c|p{7cm}|}
+        \hline
+        1 & Replace the correlated subquery with a precomputed aggregate in a separate CTE \\
+        \hline
+        2 & Replace an aggregated subquery with an EXISTS clause \\
+        \hline
+        3 & Replace multiple UNION subqueries with separate aggregation subqueries using CASE expressions \\
+        \hline
+        4 & Replace IN subqueries with inner joins using common table expressions \\
+        \hline
+        5 & Split aggregated computations by filtering on the specific period in separate subqueries \\
+        \hline
+        6 & Use DISTINCT in the earliest stage possible \\
+        \hline
+        7 & Consolidate unioned data into a single CTE \\
+        \hline
+        8 & Consolidate repeated predicate logic into a single logical expression \\
+        \hline
+        9 & Replace individual subquery counts with conditional aggregation \\
+        \hline
+        10 & Replace multiple EXISTS conditions with a precomputed set via joins \\
+        \hline
+        11 & Leverage a cross join when combining a single-row table with aggregated results \\
+        \hline
+        12 & Merge multiple subqueries with similar filtering criteria using a UNION \\
+        \hline
+        13 & Eliminate union operations by computing aggregates in dedicated subqueries per data source \\
+        \hline
+        14 & Replace multiple repetitive subqueries with a single aggregation subquery using conditional expressions \\
+        \hline
+    \end{tabular}
+    \captionsetup{font=small,name=Table}
+    \caption{A subset of beneficial NLR2s}
+    \label{gen:tab:all_nlr2}
+    \inv
+\end{table}
+
+\end{comment}
+
+
+
+\cut{Compared to the simple zero-shot prompt in Figure. \ref{gen:fig:basic_prompt}, our prompt for suggesting candidate queries incorporates two changes. The first change is to include a list of NLR2s as rewrite hints. We defer the details of how to select the most relevant NLR2s to later sections. However, it is not possible to select and apply the appropriate rules before we collect them, which is precisely the problem the second change aims to address.}

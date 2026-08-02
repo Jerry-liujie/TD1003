@@ -1,0 +1,154 @@
+\section{Introduction}
+\label{slab:sec:intro}
+
+% https://bi-survey.com/bi-avoiding-problems 
+% https://www.harnham.com/post/2018-10/how-to-succeed-in-self-service-bi-2
+% https://www.trustradius.com/vendor-blog/business-intelligence-statistics-and-trends
+
+Poorly-written database queries are a major problem in the industry~\cite{slow-query-impact-1,slow-query-impact-2,slow-query-impact-3,slow-query-impact-4,slow-query-impact-5,slow-query-impact-6,slow-query-impact-7}. 
+Whether generated automatically by software (e.g., database-backed web apps~\cite{wetune}) or written manually by less experienced users (e.g., self-service BI users~\cite{self-service-bi-1,self-service-bi-2,self-service-bi-3}), poorly-written queries significantly hinder the effectiveness of typical query optimizations performed by database systems~\cite{wetune,chaudhuri1998overview}, whereby an optimal query plan is chosen for the given query. 
+Query rewriting --- which transforms a query into another that is semantically equivalent but faster ~\cite{graefe1987exodus,graefe1993volcano,graefe1995cascades} --- is thus a critical step in facilitating effective query optimization~\cite{chen2016memsql,wetune,levy1994query,mumick1990magic,muralikrishna1992improved,graefe1987exodus,graefe1993volcano,graefe1995cascades,zhou2021sia,wang2022optimizing}. 
+
+\head{Rule-based query rewriting} Query rewriting typically relies on a set of ``rewrite rules'' --- crafted manually by experts or discovered automatically by tools --- which essentially define an equivalence relation between queries. 
+Specifically, given a query $\query$ and a rewrite rule, if the pattern expressed in the rule matches $\query$, the rule would modify $\query$ by replacing the matched part with a counterpart, generating a semantically equivalent query $\query'$ that is likely to run faster.
+%In particular, given a query $\query$ and a rewrite rule, if the pattern expressed in the rule matches some part of $\query$ (that likely makes $\query$ slow), this rule would modify $\query$ by replacing the matched part with a counterpart (which is likely faster), producing a semantically equivalent query that is likely to be more performant. 
+Examples of recent rule-based query rewriting techniques include 
+$\wetune$~\cite{wetune} and Apache Calcite~\cite{begoli2018apache}. 
+%the FGH-rule~\cite{wang2022optimizing}, 
+%and Apache Calcite~\cite{begoli2018apache}. 
+
+\head{Drawback of rule-based query rewriting}
+Unfortunately, the effectiveness of rule-based approaches\footnote{Rule-based query \emph{rewriting} should not be confused with rule-based query \emph{optimization}; the latter is simpler, and hence much more common in practice~\cite{graefe1987rule}.}  
+hinges on the quality and quantity of the rewrite rules provided to them~\cite{wetune}. 
+Yet, curating a large collection of high-quality rules is a very tedious, error-prone and time-consuming process that also requires deep expertise~\cite{levy1994query,mumick1990magic,muralikrishna1992improved,graefe1987exodus,graefe1993volcano,graefe1995cascades}. 
+While automated rule discovery techniques might help lessen the manual burden~\cite{wetune}, they are fundamentally limited to situations where the input query has to match one of the patterns captured by their rules. In other words --- as we will also show in this paper later --- state-of-the-art rule-based query rewriters (e.g., \wetune~\cite{wetune}) miss many optimization opportunities when faced with new query patterns they have not seen before.
+We also provide several motivating examples from both real-life and benchmark workloads in Section~\ref{slab:sec:motivating-example} that demonstrate these drawbacks.
+
+
+
+\begin{figure}
+\centering
+\includegraphics[width=0.9\linewidth]{chapters/slabcity/figs/workflow-clean.pdf}
+\vspace{-5pt}
+\caption{Schematic workflow of \slabcity.}
+\vspace{-10pt}
+\label{slab:fig:workflow}
+\end{figure}
+
+
+
+
+\head{Synthesis-based query rewriting}
+Motivated by the fundamentally incomplete nature of rewrite rules, in this paper, we propose a new query rewriting approach that does not need 
+rewrite rules. Instead, it uses \emph{program synthesis} to \emph{directly} search for equivalent and faster queries.
+To our best knowledge, there are only two prior works\footnote{See Section~\ref{slab:sec:related} for more applications of synthesis in the databases literature.} that use program synthesis for source-to-source query rewriting~\cite{zhou2021sia,wang2022optimizing}, but they still either require rewrite rules or only allow local changes. 
+Specifically, FGH-rule~\cite{wang2022optimizing} \barzanrev{first uses a rule to match a recursion pattern from the input Datalog query $\query$ and generate an output query template with an unknown expression $H$, and then uses program synthesis to generate $H$ such that the completed output query is equivalent to $\query$. 
+The rule defines the search space for synthesis, and hence the overall effectiveness of this approach relies on the rule.}
+The second work, $\sia$~\cite{zhou2021sia}, uses synthesis to add additional predicates to the query, but is restricted to making only local changes in the $\whereclause$ clause and cannot optimize or restructure the rest of the query. 
+\barzanrev{To the best of our knowledge, we are the first to develop a synthesis-based query rewriting technique that (i) is capable of \emph{whole-query} optimization and (ii) does not require any rewrite rules. 
+%That is, it can make \emph{global} changes (rather than only locally as in $\sia$) and does not require predefined rewrite rules (which is different from FGH-rule).
+We therefore call our technique, $\slabcity$.\footnote{Slab City is a spot in California known as the last free place in America, with no rules.}} 
+
+
+\head{High-level workflow of \toolname}
+As schematically shown in Figure~\ref{slab:fig:workflow}, \toolname takes a query $\inputquery$ and an integrity constraint $\integrityconstraint$; it returns a \emph{semantically equivalent} query $\query$ that is likely to run faster.
+\slabcity is composed of three key components: {\small \Circled{1}} Query Synthesizer, {\small \Circled{2}} Equivalence Checker, and {\small \Circled{3}} Performance Ranker. 
+Here, {\small \Circled{1}} and {\small \Circled{2}} form a counterexample-guided inductive synthesis (CEGIS) loop~\cite{solar2008program}: the query synthesizer {\small \Circled{1}} proposes a candidate query that is guaranteed to produce the same outputs as $\inputquery$ on a set of counterexample DBs, and the equivalence checker {\small \Circled{2}} validates its semantic equivalence to $\inputquery$ against all inputs. 
+
+
+
+
+
+The equivalence checker uses three types of techniques, in their increasing order of overhead: a tester, a bounded verifier, and a full verifier (see Section~\ref{slab:sec:checkingequiv} for the difference).
+If any of them finds a counterexample DB for a candidate query $\query$, then $\query$ is rejected and the DB is given as feedback to the synthesizer.
+If the full verifier can prove equivalence (within a user-set timeout), then $\query$ is marked ``fully verified''; 
+%In case full equivalence cannot be determined within the timeout, 
+otherwise, $\query$ would receive a  ``bounded verification'' flag indicating it is correct only in a bounded sense (i.e., not fully).
+%on all inputs under consideration.
+%\footnote{\toolname uses both verification and testing to check semantic equivalence and identify counterexamples. Since our query language is quite expressive, we generally guarantee equivalence against a ``bounded'' input space where the number of rows in the input DB is bounded, though the column values are not. However, for the subset of select-project-join queries in our language, we guarantee equivalence for all possible inputs.}
+Equivalent queries with both types of flags will be ranked by the performance ranker {\small \Circled{3}} based on $\query$'s latency (estimated by \texttt{EXPLAIN} or actual execution on a DBMS).
+At the end, if the (fastest) returned query has a ``bounded verification'' flag, users can manually inspect it to ensure its correctness.
+If it is ``fully verified'', no manual check is needed and the query can be safely used immediately.
+\barzanrev{The tester, bounded verifier, and manual inspection are safeguards to address the limitations of  full verification which is applicable to a subset of all rewrites (about 17\%). We discuss the implications of this in detail in Section~\ref{slab:sec:eval:discussion}.}
+%We also note that our checker gives higher assurance --- it found a number of incorrect rewrites generated by state-of-the-art rewriters (due to some of their incorrect rules).
+%\barzan{Xinyu make sure the above is correct}
+
+
+\head{Target workload and use case}
+Our motivating use case is any scenario where either (1) the same query is written once but rerun many times, such as BI dashboards or database-backed web apps, or (2) the query is run once but its latency is much longer than several seconds (e.g., 5 seconds), such as ad-hoc or OLAP queries against big data.
+While \slabcity's time budget can be specified by users, in this work we use 5 seconds (that is, we have up to 5 seconds to rewrite a query into a faster one). 
+This search cost is well justified and negligible in the aforementioned situations.
+For example, a developer creates a BI dashboard (and the queries therein) once, which is then used hundreds of times a day across the entire organization by various business users. Likewise, developers hardcode their queries in their web apps which are then invoked thousands of times as visitors interact with the website. In these scenarios, developers can invoke \slabcity as a final step to identify any optimizations before deploying their dashboard or web apps. 
+Similarly, queries in modern data warehouses against terabytes of data will often take minutes and therefore spending an additional 5 seconds upfront to check if it can be rewritten into a more optimized form will be worthwhile even if the query will only run once.
+In terms of the query dialect, 
+\slabcity supports an expressive subset of SQL, including nested queries and arbitrary join patterns (see the formal language definition in Section~\ref{slab:sec:problem}).
+
+
+
+
+
+
+
+\head{Challenges}
+However, \slabcity's key advantage of not relying on rules comes with three major challenges. 
+First, given the expressiveness of our SQL language, searching for an equivalent query is a non-trivial task. 
+A brute-force approach (e.g., enumerating programs in the order of program size) from the program synthesis literature~\cite{gulwani2017program,wang2017synthesizing} would not scale. %because it needs to enumerate a huge number of incorrect queries before finding an equivalent one. 
+Second, during synthesis, non-equivalent queries need to be disproved by a verifier which typically involves Satisfiability Modulo Theory (SMT) solving and thus is in general costly. 
+%In other words, we have to use verification parsimoniously. 
+Finally, it is insufficient to find \emph{any} equivalent query; we have to find one that is both equivalent and faster. This makes our problem even more challenging --- we may need to find multiple equivalent queries in order to select a faster one.
+
+\head{Intuition}
+To address these challenges, our first key insight is that a query's dataflow --- i.e., information that flows through different query operations --- can be used to prioritize query search. 
+In other words, dataflows of the input query could serve as a hint to help significantly reduce the number of queries to be enumerated. 
+The intuition is that if a query $\query$ is equivalent to $\inputquery$, $\query$ typically exhibits dataflows that are also manifested in $\inputquery$. For example, if $\query$ filters an aggregated column (e.g., using $\sqlhaving \sqlspace \sqlsum$), the same computations (e.g., calculating $\sqlsum$) likely would also show up in $\inputquery$. 
+On the other hand, a query $\query'$ that does \emph{not} involve such dataflows is less likely to be equivalent and therefore can be de-prioritized. 
+Our second insight is that we can leverage a lightweight testing approach to significantly lower the frequency of invoking a costly equivalence verifier. 
+%Specifically, we develop a syntax-based testing technique to identify counterexamples without performing expensive semantic analysis --- this can effectively disprove many inequivalent queries. 
+These insights combined allow us to develop a new CEGIS-based technique: the checker runs a tester before invoking an SMT-based verifier, and the query synthesizer utilizes dataflows to speed up the search. In particular, our synthesis technique stratifies the search space using a novel dataflow-based scoring function; we will expand on the technical details in Section~\ref{slab:sec:scorefunction}.
+
+
+
+
+
+
+
+
+
+\head{Contributions} In summary, we make the following contributions. 
+\begin{itemize}[leftmargin=*]
+\item
+We propose the first {synthesis-based} query rewriting technique capable of whole-query optimization without requiring predefined rewrite rules. 
+%We implement our ideas in a system, called \toolname, which also incorporates various query equivalence checking techniques including testing and formal verification.
+\item 
+To the best of our knowledge, we are the first to define dataflows for SQL queries and exploit them for efficient query synthesis.  
+%design a new query synthesis algorithm based on the CEGIS paradigm which utilizes dataflow information to effectively guide the query synthesis process. 
+\item 
+We contribute a new benchmark to facilitate research on query rewriting research by curating more than 1000 real-life queries from LeetCode participants.
+\item 
+Our comprehensive evaluation on a wide range of workloads and databases shows that, \toolname can not only rewrite 7--68\% more queries than state-of-the-art query rewriters, but also generate queries that are significantly faster (up to 4 orders of magnitude). 
+\end{itemize}
+
+
+
+
+
+
+% \xinyurevision{\head{Limited full verification and its implications} 
+% In our evaluation, among $\toolname$'s output queries (all of which pass the tester and bounded verifier), only a subset (17\%) of them can be \emph{fully} verified --- which is the \emph{highest assurance possible} --- by $\toolname$'s current full verifier. 
+% In other words, more than 80\% of 
+% the output queries are not fully verified and might be wrong in theory (even though we manually confirmed all of them are correct due to our practically highly effective checker). 
+% On the other hand, we observe some of the queries generated by state-of-the-art rule-based rewriters may also be wrong, because some of their rewrite rules (even though crafted by experts) are not formally verified. For example, our checker finds that {5\%} of $\learnedrewrite$'s~\cite{LR} output queries are not equivalent to the original input query and reveals multiple buggy rewrite rules in Calcite\footnote{\todo{Put links to Calcite bug reports and explain the difference of rewrite rules here vs. rules that rewrite expressions in relational algebra.}}. 
+% In general, some \emph{manual} effort is necessary to improve the assurance of correctness when theoretical full correctness is not guaranteed, for both rule-based and synthesis-based techinques. 
+% %rule-based techniques require manually crafted rules, while $\toolname$ may need manual inspection of synthesized queries. 
+% While $\toolname$ can optimize more queries than state-of-the-art rule-based rewriters as shown in our evaluation, in the short term, this advantage comes at the cost of potentially needing more manual inspection. 
+% In the longer run, with better automated checkers, the manual burden will be lessened. 
+% Overall, we see $\toolname$ as an exploration of a new trade-off between \emph{optimization capability} and \emph{manual overhead}. It is also a complementary approach to existing ones and can be invoked after a rule-based rewriter when desired.}
+
+% \jierevision{In our evaluation, among $\toolname$'s output queries (all of which pass the tester and bounded verifier), only a subset (17\%) of them can be \emph{fully} verified by $\toolname$'s full verifier. On the other hand, note that not all rewrite rules in rule-based approaches can be fully verified; some of them still require error-prone human verification. This is evidenced by examples of incorrect rewrites in prior work reported by our bounded verifier ({5\%} of $\learnedrewrite$'s~\cite{LR} output queries are not equivalent to the original queries, revealing multiple buggy rewrite rules in Calcite\footnote{\todo{Put links to Calcite bug reports and explain the difference of rewrite rules here vs. rules that rewrite expressions in relational algebra.}}), which also underscores the significance of our bounded verifier. Through our automated testing and bounded verification, we are able to eliminate a significant number of incorrect rewrites, enabling users to concentrate solely on a small subset of high-quality rewrites. In SlabCity's target use case, specifically dashboard queries, the relatively low ratio of full verification does not present a major issue, as there is still a human inspection process in place prior to deploying the rewrites in production. In the longer run, with better automated checkers, the manual burden will be lessened. Overall, we see $\toolname$ as an exploration of a new trade-off between \emph{optimization capability} and \emph{manual overhead}. It is also a complementary approach to existing ones and can be invoked after a rule-based rewriter when desired.}
+
+
+
+
+
+
+

@@ -1,0 +1,98 @@
+% !TEX root = ../VLDB-2026-DAGSmith-Dependency-Aware-Rewriting-for-dbt-Style-SQL-Pipelines.tex
+\section{Introduction}\label{dag:sec:intro}
+
+\ph{Rising SQL Complexity}
+SQL is no longer only a hand-written interface for individual analytical questions. It is increasingly the implementation language for recurring data products: governed dashboards, AI-ready feature tables, self-service BI datasets, and organization-wide reporting layers. At the same time, more SQL is produced by BI systems, code generators, and AI-assisted development tools rather than written from scratch.  In fact, recent studies report  that 70\% of analytics professionals use AI for code development~\cite{dbt2025state}, and that  BI-generated SQL  contain extremely complex scalar expressions and relational operator trees~\cite{getreal2018}.
+This has created a major efficiency gap between the complexity of the SQL queries generated and what today's query optimizers are capable of effectively optimizing. Source-to-source query rewriting is the traditional way to narrow this gap: a rewriter transforms complex SQL into an equivalent form that the query optimizer is more likely to turn into an efficient plan. However, query rewriting has traditionally treated one SQL statement as the unit of optimization. Unfortunately, the effectiveness of this one-query-at-a-time approach is increasingly limited by a second trend: modern SQL is no longer produced and executed only as isolated statements, but as recurring transformation pipelines.
+
+
+\ph{Rise of SQL Pipelines}
+Data teams are increasingly building large, recurring SQL pipelines. This growth is driven by complex business logic that must be computed repeatedly and reused consistently across governed dashboards, AI-ready feature tables, self-service BI datasets, compliance reports, and downstream applications.
+ One of the most widely adopted tools for these workflows is \emph{dbt} (the data build tool)~\cite{dbtWhatExactly}, reported to be used by 50K+ data teams weekly across the world~\cite{dbtComplexity}. 
+dbt lets teams write transformations as version-controlled SQL \code{SELECT} statements (called ``models'' in dbt, which we use interchangeably in this paper), declare dependencies among them, and compile the resulting graph into SQL jobs executed by a data warehouse.  Figure~\ref{dag:fig:intro-toy} gives a toy example. A raw orders table feeds a cleaning transformation; the cleaned result feeds both a revenue table and a daily active-customer table. The SQL text explains each local transformation, while the edges explain how the transformations compose into a pipeline.
+This trend is much broader than dbt. SQLMesh~\cite{sqlmeshOverview}, Dagster asset graphs~\cite{dagsterAssets}, Airflow directed acyclic graphs~\cite{airflowDags}, Prefect flows~\cite{prefectTasks}, Argo Workflows~\cite{argoDag}, Databricks Workflows~\cite{databricksJobs}, and medallion lakehouse pipelines~\cite{databricksMedallion} all represent recurring data transformations through explicit dependencies. In this paper, we target the SQL subset of this broader pattern, which we refer to as \emph{SQL pipeline DAG}: a recurring directed acyclic graph whose nodes are SQL transformations or SQL-produced tables/views, and whose edges record that one node reads another node's output.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  font=\scriptsize,
+  node distance=5mm and 4mm,
+  box/.style={draw=black!70, text=black, rounded corners=2pt, align=left,
+              inner sep=2.2pt, minimum width=22mm},
+  edge/.style={-{Stealth[length=1.5mm]}, black!70, thin}
+]
+\node[box, minimum width=17mm] (orders) {\textbf{orders}\\raw table};
+\node[box, minimum width=24mm, right=of orders] (clean) {\textbf{clean\_orders}\\\code{SELECT ...}\\\code{FROM orders}\\\code{WHERE status='paid'}};
+\node[box, minimum width=20mm, above right=of clean] (rev) {\textbf{daily\_revenue}\\\code{GROUP BY day}};
+\node[box, minimum width=20mm, below right=of clean] (cust) {\textbf{active\_customers}\\\code{SELECT DISTINCT}\\\code{customer\_id}};
+\draw[edge] (orders) -- (clean);
+\draw[edge] (clean) -- (rev);
+\draw[edge] (clean) -- (cust);
+\end{tikzpicture}
+% \inv
+\caption{A toy SQL pipeline DAG. Nodes are SQL transformations or SQL-produced tables (called ``models'' in dbt); edges show which transformation consumes another transformation's output.}
+\label{dag:fig:intro-toy}
+\inv
+\end{figure}
+
+\ph{Pipeline Optimization Gap} 
+These pipeline DAGs often include hundreds or thousands of SQL transformations that reference one another. Their scale makes them difficult to optimize with techniques designed for a single SQL statement or a flat workload: inlining every referenced transformation into each downstream query would produce deeply nested SQL with tens or hundreds of layers whose size and complexity are well beyond what today's optimizers can even tackle. In particular, existing \emph{query rewriting} techniques, whether traditional rule-based systems~\cite{wetune} or modern synthesis- or LLM-based techniques~\cite{dong2023slabcity,genrewrite,sun2024r}, rewrite one SQL statement at a time.  This scope is useful for improving a standalone query, but it is too narrow for optimizations whose correctness or benefit depends on the surrounding pipeline, such as removing work no final output uses, reusing equivalent logic across separate transformations, or changing refresh frequency based on input changes and output consumption.
+ \emph{Multi-query optimization} techniques~\cite{sellis1988multiple,roy2000efficient} consider multiple queries together, but their classical goal is to share common scans, joins, or intermediate results across a batch of submitted queries. They do not generally rewrite a SQL pipeline by adding, removing, splitting, or merging transformations based on downstream demand and refresh behavior.
+ \emph{Materialized-view selection}~\cite{harinarayan1996implementing,agrawal2000automated} chooses intermediate query results to precompute and rewrites future queries to read those precomputed results. This improves reuse when the relevant computation has already been identified, but it does not by itself determine that a pipeline should drop unused work, factor repeated logic written in different forms, move expensive operations after data reduction, or refresh different parts of the pipeline at different rates.
+Lastly, \emph{Workflow schedulers}~\cite{airflowDags,dagsterAssets,prefectTasks,argoDag} know dependencies, but usually optimize execution order, failure recovery, retries, or resource allocation rather than the SQL semantics of the transformations themselves. 
+
+
+\ph{Dependencies as Signals} 
+\label{dag:sec:dependencies-as-signals}
+Our key insight is that explicit dependencies are not merely execution constraints; they are  signals that can be leveraged for optimization.
+In particular, a SQL pipeline DAG exposes six kinds of information that are hidden or much harder to recover when queries are optimized independently: \textbf{(1) Edge semantics:} producer-consumer edges reveal how one SQL transformation's output is used by later transformations; \textbf{(2) Cross-graph redundancy:} similar business logic can appear in distant parts of the graph, even when SQL text differs; \textbf{(3) Downstream demand:} downstream dependencies reveal which columns, joins, filters, and intermediate results can affect final outputs; \textbf{(4) Operator placement:} the graph reveals where expensive operations occur relative to data-reducing filters, projections, joins, and aggregations; 
+\textbf{(5) Rewrite-persistence coupling:} unlike single-query rewriting, which is constrained to equivalent rewrites that are cheaper in isolation, pipeline rewriting can consider alternatives that produce additional reusable outputs and are therefore locally more expensive, as long as those outputs are materialized once and reused by enough downstream consumers; and \textbf{(6) Refresh patterns:} schedules and source update rates reveal how often inputs change and outputs are consumed. 
+
+
+
+
+\begin{comment}
+    
+
+
+\begin{table*}[t]
+\centering
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.12}
+\caption{Optimization signals exposed by explicit SQL pipeline dependencies.}
+\label{dag:tab:dependency-signals}
+\begin{tabular}{@{}p{0.035\textwidth}p{0.41\textwidth}p{0.50\textwidth}@{}}
+\toprule
+\textbf{\#} & \textbf{What explicit dependencies expose} & \textbf{How \dagsmith leverages them for optimization} \\
+\midrule
+1 & Producer-consumer edges reveal how one SQL transformation's output is used by later transformations. & \textbf{Dependency-edge simplification:} remove or simplify dependency edges whose purpose can be expressed more directly, while preserving final outputs. \\
+2 & Similar business logic can appear in distant parts of the graph, even when SQL text differs. & \textbf{Non-local semantic reuse:} factor repeated work into a shared computation across non-adjacent transformations. \\
+3 & Downstream dependencies reveal which columns, joins, filters, and intermediate results can affect final outputs. & \textbf{Downstream-aware pruning:} remove work that is provably irrelevant to every final output. \\
+4 & The graph reveals where expensive operations occur relative to data-reducing filters, projections, joins, and aggregations. & \textbf{Pipeline-aware work placement:} move expensive work after data-reducing steps as long as final outputs are not impacted. \\
+5 & Dependency fanout reveals when a transformation could produce additional reusable outputs for downstream consumers. & \textbf{Rewrite-materialization co-optimization:} consider locally more expensive rewrites that pay off only when the richer result is materialized once and reused by enough downstream consumers. \\
+6 & Schedules and source update rates reveal how often inputs change and outputs are consumed. & \textbf{Frequency-aware optimization:} align computation frequency with input-change rates and output-consumption rates, avoiding refreshes that do not impact consumers. \\
+\bottomrule
+\end{tabular}
+\endgroup
+\end{table*}
+
+\end{comment}
+
+
+\ph{Our Approach}
+In this paper, we introduce \dagsmith, the first (to the best of our knowledge) holistic, dependency-aware rewriting system for SQL pipeline DAGs.  \dagsmith exploits the exposed dependency structure to  perform six classes of optimization: \textbf{(1) dependency-edge simplification:} remove or simplify dependency edges whose purpose can be expressed more directly, while preserving final outputs; \textbf{(2) non-local semantic reuse:} factor repeated work into a shared computation across non-adjacent transformations; \textbf{(3) downstream-aware pruning:} remove work that is provably irrelevant to every final output; \textbf{(4) pipeline-aware work placement:} move expensive work after data-reducing steps as long as final outputs are not impacted; \textbf{(5) rewrite-materialization co-optimization:} decide when rewrite benefits are outweighed by materialization cost, and when materializing a rewritten result makes the rewrite worthwhile; and \textbf{(6) frequency-aware optimization:} align computation frequency with input-change rates and output-consumption rates, avoiding refreshes that do not impact consumers.
+
+\dagsmith first analyzes compiled SQL and dependency edges to identify regions likely to contain these opportunities. It then leverages Large Language Models (LLMs) to reason over the relevant subgraph and propose concrete refactorings, but separates proposal, criticism, SQL generation, and data-backed equivalence checking so unsafe or counterproductive rewrites can be rejected before adoption. Adopted candidates are not evaluated in isolation: \dagsmith retunes persistence choices for each candidate using a learned cost model and an iterative local linearization procedure, then solves a global selection problem to choose a non-conflicting subset of rewrites. Finally, frequency information from source update rates and output demand reweights cost estimates, detects over-scheduled work, and generates splitting candidates when slow-changing logic is embedded in fast-refreshing transformations.
+The result is a rewritten, output-equivalent SQL pipeline that remains executable by the same SQL engine and orchestration framework, but is significantly more performant.
+
+\ph{Contributions}
+This paper makes the following contributions:
+\begin{enumerate}[leftmargin=*, topsep=2pt, itemsep=1pt]
+    \item We formulate dependency-aware source-to-source rewriting for SQL pipeline DAGs. We present the first holistic approach to this problem (to the best of our knowledge) by identifying the pipeline-level signals exposed by explicit dependencies and the rewriting opportunities they enable: dependency-edge simplification, non-local semantic reuse, downstream-aware pruning, pipeline-aware work placement, rewrite-materialization co-optimization, and frequency-aware optimization.
+    \item We present the design of \dagsmith, which combines structural graph analysis, LLM-guided refactoring, separated proposal, criticism, SQL generation, and data-backed equivalence checking, learned cost modeling, persistence tuning, frequency-aware scheduling, and global candidate selection.
+    \item We conduct a comprehensive evaluation showing that, on the open-source Tuva dbt project, \dagsmith reduces elapsed time by \RememberToChange{42.6\%} and warehouse compute cost by \RememberToChange{67.7\%}; these reductions are \RememberToChange{22.8\%}/\RememberToChange{83.0\%} larger than materialization-only tuning and \RememberToChange{98.1\%}/\RememberToChange{348.3\%} larger than state-of-the-art single-query rewriting techniques.
+   \end{enumerate}
+
+The rest of the paper is organized as follows. Section~\ref{dag:sec:motivating} defines the setting and illustrates the opportunity space. Section~\ref{dag:sec:approach} presents the design of \dagsmith. Section~\ref{dag:sec:eval} presents our evaluation, Section~\ref{dag:sec:related} discusses prior work, and Section~\ref{dag:sec:conclusion} concludes.

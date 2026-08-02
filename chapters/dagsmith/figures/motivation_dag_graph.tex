@@ -1,0 +1,115 @@
+% \resizebox{\textwidth}{!}{%
+% \begin{tikzpicture}[
+%   font=\scriptsize,
+%   n/.style={draw, rounded corners=2pt, align=center, minimum height=7mm, minimum width=17mm, inner sep=2pt},
+%   src/.style={n, fill=gray!12},
+%   new/.style={n, fill=green!13, thick, minimum width=21mm},
+%   rew/.style={n, fill=blue!4, thick, minimum width=19mm},
+%   gone/.style={n, fill=red!8, dashed, minimum width=20mm},
+%   wide/.style={n, minimum width=29mm},
+%   legend/.style={draw, rounded corners=1pt, align=center, font=\fontsize{3.6}{4.0}\selectfont, minimum height=2.6mm, inner sep=0.45pt},
+%   legnew/.style={legend, fill=green!13, thick},
+%   legrew/.style={legend, fill=blue!4, thick},
+%   arr/.style={-{Stealth[length=1.6mm,width=1.15mm]}, thin, shorten >=2.4pt}
+% ]
+% \draw[densely dotted, thick] (5.55,-2.05) -- (5.55,3.00);
+% \node[font=\bfseries] at (0,2.65) {(a) Before};
+% \node[src] (bc) at (0,1.05) {claims\\(fast)};
+% \node[src] (bcode) at (0,-1.60) {code\_catalog\\(slow)};
+% \node[n] (bd) at (2.65,2.15) {dialysis};
+% \node[n] (bp) at (2.65,1.30) {psychiatric};
+% \node[n] (be) at (2.65,0.45) {equipment};
+% \node[n] (bn) at (2.65,-0.65) {nursing};
+% \node[wide] (bs) at (3.25,-1.60) {claims\_summary\\expensive grouping};
+% \draw[arr] (bc.east) -- (bd.west);
+% \draw[arr] (bc.east) -- (bp.west);
+% \draw[arr] (bc.east) -- (be.west);
+% \draw[arr] (bc.east) -- (bn.west);
+% \draw[arr] (be.south) -- (bn.north);
+% \draw[arr] (bc.east) -- (bs.west);
+% \draw[arr] (bcode.east) -- (bs.west);
+% \node[font=\bfseries] at (7.45,2.65) {(b) After};
+% \node[src] (ac) at (7.20,1.15) {claims\\(fast)};
+% \node[src] (acode) at (7.20,-1.60) {code\_catalog\\(slow)};
+% \node[new] (asf) at (9.70,1.15) {service\_flags\\(materialized)};
+% \node[new] (asc) at (9.70,-1.60) {service\_code\_flags\\(slow)};
+% \node[rew, minimum width=22mm, anchor=west] (ad) at (11.55,2.15) {dialysis\\(rewritten)};
+% \node[rew, minimum width=22mm, anchor=west] (ap) at (11.55,1.25) {psychiatric\\(rewritten)};
+% \node[rew, minimum width=22mm, anchor=west] (an) at (11.55,-0.45) {nursing\\(rewritten)};
+% \node[rew, minimum width=27mm, anchor=west] (asum) at (11.55,-1.60) {claims\_summary\\(rewritten)};
+% \node[gone, minimum width=22mm, anchor=west] (ae) at (11.55,0.40) {equipment\\(pruned if unused)};
+% \draw[arr] (ac.east) -- (asf.west);
+% \draw[arr] (asf.east) -- (ad.west);
+% \draw[arr] (asf.east) -- (ap.west);
+% \draw[arr] (asf.east) -- (an.west);
+% \draw[arr] (acode.east) -- (asc.west);
+% \draw[arr] (ac.east) -- (asum.west);
+% \draw[arr] (asc.east) -- (asum.west);
+% \node[font=\fontsize{3.6}{4.0}\selectfont\bfseries, anchor=east] at (6.50,-2.35) {Legend:};
+% \node[legend, fill=gray!12, minimum width=11mm] at (7.10,-2.35) {base table};
+% \node[legend, fill=white, minimum width=13mm] at (8.40,-2.35) {original model};
+% \node[legnew, minimum width=10mm] at (9.60,-2.35) {new model};
+% \node[legrew, minimum width=13mm] at (10.85,-2.35) {rewritten model};
+% \node[legend, fill=red!8, dashed, minimum width=12mm] at (12.20,-2.35) {pruned model};
+% \end{tikzpicture}%
+% }
+
+
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\scriptsize,
+  n/.style={draw, rounded corners=2pt, align=center, minimum height=6.6mm, minimum width=17mm, inner sep=1.6pt},
+  src/.style={n, fill=gray!12},
+  new/.style={n, fill=green!13, thick, minimum width=21mm},
+  rew/.style={n, fill=blue!4, thick, minimum width=19mm},
+  gone/.style={n, fill=red!8, dashed, minimum width=20mm},
+  wide/.style={n, minimum width=29mm},
+  legend/.style={draw, rounded corners=1pt, align=center, font=\fontsize{4.4}{5.0}\selectfont, minimum height=3.0mm, inner sep=1.4pt},
+  legnew/.style={legend, fill=green!13, thick},
+  legrew/.style={legend, fill=blue!4, thick},
+  arr/.style={-{Stealth[length=1.6mm,width=1.15mm]}, thin, shorten >=2.4pt}
+]
+\draw[densely dotted, thick] (5.55,-1.95) -- (5.55,2.05);
+% ---------- (a) Before ----------
+\node[font=\bfseries] at (0,1.96) {(a) Before};
+\node[src] (bc) at (0,0.45) {claims\\(fast)};
+\node[src] (bcode) at (0,-1.56) {code\_catalog\\(slow)};
+\node[n] (bd) at (2.65,1.56) {dialysis};
+\node[n] (bp) at (2.65,0.78) {psychiatric};
+\node[n] (be) at (2.65,0.00) {equipment};
+\node[n] (bn) at (2.65,-0.78) {nursing};
+\node[wide] (bs) at (3.25,-1.56) {claims\_summary\\expensive grouping};
+\draw[arr] (bc.east) -- (bd.west);
+\draw[arr] (bc.east) -- (bp.west);
+\draw[arr] (bc.east) -- (be.west);
+\draw[arr] (bc.east) -- (bn.west);
+\draw[arr] (be.south) -- (bn.north);
+\draw[arr] (bc.east) -- (bs.west);
+\draw[arr] (bcode.east) -- (bs.west);
+% ---------- (b) After ----------
+\node[font=\bfseries] at (7.45,1.96) {(b) After};
+\node[src] (ac) at (7.20,0.52) {claims\\(fast)};
+\node[src] (acode) at (7.20,-1.56) {code\_catalog\\(slow)};
+\node[new] (asf) at (9.70,0.52) {service\_flags\\(materialized)};
+\node[new] (asc) at (9.70,-1.56) {service\_code\_flags\\(slow)};
+\node[rew, minimum width=22mm, anchor=west] (ad) at (11.55,1.56) {dialysis\\(rewritten)};
+\node[rew, minimum width=22mm, anchor=west] (ap) at (11.55,0.78) {psychiatric\\(rewritten)};
+\node[rew, minimum width=22mm, anchor=west] (an) at (11.55,-0.78) {nursing\\(rewritten)};
+\node[rew, minimum width=27mm, anchor=west] (asum) at (11.55,-1.56) {claims\_summary\\(rewritten)};
+\node[gone, minimum width=22mm, anchor=west] (ae) at (11.55,0.00) {equipment\\(pruned if unused)};
+\draw[arr] (ac.east) -- (asf.west);
+\draw[arr] (asf.east) -- (ad.west);
+\draw[arr] (asf.east) -- (ap.west);
+\draw[arr] (asf.east) -- (an.west);
+\draw[arr] (acode.east) -- (asc.west);
+\draw[arr] (ac.east) -- (asum.west);
+\draw[arr] (asc.east) -- (asum.west);
+% ---------- Legend (single tight row, chained so boxes cannot overlap) ----------
+\node[font=\fontsize{4.4}{5.0}\selectfont\bfseries, anchor=east] (leglbl) at (4.30,-2.28) {Legend:};
+\node[legend, fill=gray!12, anchor=west] (l1) at ([xshift=1.4mm]leglbl.east) {base table};
+\node[legend, fill=white, anchor=west] (l2) at ([xshift=1.6mm]l1.east) {original model};
+\node[legnew, anchor=west] (l3) at ([xshift=1.6mm]l2.east) {new model};
+\node[legrew, anchor=west] (l4) at ([xshift=1.6mm]l3.east) {rewritten model};
+\node[legend, fill=red!8, dashed, anchor=west] (l5) at ([xshift=1.6mm]l4.east) {pruned model};
+\end{tikzpicture}%
+}

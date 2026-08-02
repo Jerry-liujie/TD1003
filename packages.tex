@@ -1,0 +1,71 @@
+% ------------------------------------------------------------------
+% packages.tex -- additional packages beyond those loaded by
+% dissertation.cls (which already loads: amsmath, amsfonts, amssymb,
+% graphicx, subcaption, natbib, verbatim, soul, float, acronym,
+% enumitem, fancyhdr, appendix, titlesec, geometry, setspace,
+% xcolor [dvipsnames], hyperref, href-ul, lmodern)
+% ------------------------------------------------------------------
+
+%--- Theorem-like environments (must load BEFORE newtxmath, which
+%    also defines \openbox) ----------------------------------------
+\usepackage{ulem}
+\normalem % keep \emph/\em italic (same effect as ulem's [normalem] option)
+\usepackage{amsthm}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{example}{Example}[chapter]
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{lemma}{Lemma}[chapter]
+
+%--- Fonts ---------------------------------------------------------
+\usepackage{newtxtext}      % Times-like text font
+\usepackage{newtxmath}      % matching math font
+\usepackage{microtype}
+
+%--- Math / symbols ------------------------------------------------
+\usepackage{mathtools}
+% NOTE: the bm package is intentionally NOT loaded -- DAGSmith's macros
+% define \bm as an author-comment macro ("BM:"), and no chapter uses
+% bold math via bm.sty.
+
+
+%--- Tables / floats -----------------------------------------------
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{makecell}
+% adjustbox intentionally not loaded: no chapter uses it, and it pulls
+% in the calc package, which breaks the class's bibliography hook.
+
+%--- Misc utilities ------------------------------------------------
+\usepackage{xspace}
+\usepackage{pifont}
+\usepackage{framed}
+
+\usepackage{circledsteps}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,shapes.geometric,backgrounds}
+
+%--- Code listings -------------------------------------------------
+\usepackage{listings}
+
+%--- Algorithms ----------------------------------------------------
+% All chapters use algorithmicx/algpseudocode. (GenRewrite's paper
+% used algorithm2e, but algorithm2e globally breaks \label handling
+% inside algorithmicx blocks, so its single algorithm was converted
+% to algorithmicx syntax in sections/4_approach.tex.)
+\usepackage{algorithmicx}
+\usepackage[noend]{algpseudocode}
+\usepackage[chapter]{algorithm}
+
+%--- Shims for acmart-specific commands used in the papers ---------
+\providecommand{\Description}[2][]{} % acmart accessibility descriptions
+
+%--- Cross-referencing (must load after hyperref, which the class
+%    loads at the end of dissertation.cls) -------------------------
+\usepackage[capitalise,nameinlink]{cleveref}
+
+%--- Chapter-specific macros (deduplicated; conflicting names are
+%    prefixed slab/gen/dag, and \tool was renamed per chapter) -----
+\input{macros/slabcity_macros}
+\input{macros/genrewrite_macros}
+\input{macros/dagsmith_macros}

@@ -1,0 +1,26 @@
+%===================================================================
+% Chapter 6: Conclusion -- Phase-1 stub; revise freely.
+%===================================================================
+\chapter{Conclusion}
+\label{chap:conclusion}
+
+% TODO: expand into a proper concluding chapter (1-3 pages).
+This dissertation studied how program synthesis and large language
+models can rewrite SQL beyond existing rule-based optimizers,
+progressing from single-query transformations to full SQL pipeline
+refactoring.
+
+SlabCity demonstrated that whole-query optimization is possible
+without predefined rewrite rules, by defining dataflows for SQL
+queries and using them to guide an efficient synthesis search.
+GenRewrite showed that LLMs, anchored by natural-language rewrite
+rules, can achieve broader coverage and larger speedups than both
+rule-based systems and naive prompting, while accumulating reusable
+rewriting knowledge over time. DAGSmith lifted these ideas to
+dependency-rich SQL pipelines, jointly reasoning about refactoring,
+materialization, and scheduling to deliver large end-to-end cost and
+latency reductions on realistic dbt projects.
+
+Together, these systems trace a path from synthesis to LLMs for SQL
+query rewriting beyond rules, delivering substantial performance gains
+from individual queries to large, dependency-rich SQL pipelines.

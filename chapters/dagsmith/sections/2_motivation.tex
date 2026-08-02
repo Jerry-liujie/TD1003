@@ -1,0 +1,615 @@
+% !TEX root = ../VLDB-2026-DAGSmith-Dependency-Aware-Rewriting-for-dbt-Style-SQL-Pipelines.tex
+\section{Problem Setting}
+\label{dag:sec:motivating}
+
+Before presenting our approach, we first provide the necessary background on SQL pipeline DAGs (\S\ref{dag:sec:dbt-setting}), then present a few motivating examples of pipeline-level optimization opportunities exposed by explicit dependencies (\S\ref{dag:sec:motivating-examples}). Lastly, we explain why local query rewriting is insufficient for this setting (\S\ref{dag:sec:why-different}).
+
+\subsection{Background: SQL Pipeline DAGs}
+\label{dag:sec:dbt-setting}
+
+ A \emph{SQL pipeline DAG} is a recurring SQL program whose nodes are named transformations and whose directed edges record producer-consumer relationships among their outputs (see Figure~\ref{dag:fig:intro-toy} for a toy example). The DAG determines evaluation order, while node metadata can specify whether each result is materialized and how frequently it is refreshed. Because dbt calls each named SQL transformation a \emph{model}, we use \emph{model} for dbt-specific examples and \emph{transformation} for the broader setting. 
+ 
+
+\ph{Target workload}
+Although we use dbt in our examples and evaluation, the optimization problem is more general. \dagsmith targets recurring SQL-based DAGs: pipelines in which node logic is available as SQL, edges expose producer-consumer dependencies, and system metadata records persistence and refresh behavior. dbt is a prominent instance of this setting, but similar dependency graphs arise in SQLMesh~\cite{sqlmeshOverview}, Dagster~\cite{dagsterAssets}, Airflow~\cite{airflowDags}, Prefect~\cite{prefectTasks}, Argo~\cite{argoDag}, Databricks Workflows and Lakeflow Jobs~\cite{databricksJobs}, medallion lakehouse pipelines~\cite{databricksMedallion}, and Luigi~\cite{luigiDocs}.
+
+\begin{comment}
+\subsection{Motivating Examples (Original)}
+\label{dag:sec:motivating-examples}
+
+\begin{figure*}[t]
+\centering
+
+\begin{tikzpicture}[
+  font=\small,
+  node distance=5mm and 7mm,
+  src/.style={draw, rounded corners=2pt, fill=gray!12,
+              minimum width=14mm, minimum height=8mm,
+              align=center, font=\scriptsize},
+  model/.style={draw, rounded corners=2pt, fill=white,
+                minimum width=20mm, minimum height=6mm,
+                align=center, font=\scriptsize},
+  newmodel/.style={draw, rounded corners=2pt, fill=blue!8, thick,
+                   minimum width=20mm, minimum height=6mm,
+                   align=center, font=\scriptsize},
+  edge/.style={-{Stealth[length=1.5mm]}, thin, gray!70!black},
+  annot/.style={font=\scriptsize\bfseries, color=blue!50!black,
+                draw=blue!50!black, circle, inner sep=0pt,
+                minimum size=3.5mm, fill=blue!8},
+]
+
+\node[font=\bfseries\small] (beforehdr) at (0,0) {Before};
+\node[src, below=3mm of beforehdr.south west, anchor=north west] (orders0)
+  {orders\\\textcolor{red!60!black}{\itshape hourly}};
+\node[src, below=3mm of orders0] (catalog0)
+  {catalog\\\textcolor{red!60!black}{\itshape weekly}};
+\node[model, right=18mm of $(orders0)!0.5!(catalog0)$] (enr0) {orders\_enriched};
+\node[model, above right=2mm and 8mm of enr0] (rev0) {revenue\_by\_tier};
+\node[model, below right=2mm and 8mm of enr0] (top0) {top\_products};
+\draw[edge] (orders0) -- (enr0);
+\draw[edge] (catalog0) -- (enr0);
+\draw[edge] (enr0) -- (rev0);
+\draw[edge] (enr0) -- (top0);
+\node[font=\scriptsize\itshape, color=red!50!black, below=0mm of enr0, align=center]
+  {expensive\\CASE};
+
+\node[font=\bfseries\small, right=72mm of beforehdr] (afterhdr) {After};
+\node[src, below=3mm of afterhdr.south west, anchor=north west] (orders1)
+  {orders\\\textcolor{red!60!black}{\itshape hourly}};
+\node[src, below=3mm of orders1] (catalog1)
+  {catalog\\\textcolor{red!60!black}{\itshape weekly}};
+\node[newmodel, right=6mm of catalog1] (ptiers1) {product\_tiers};
+\node[model, right=6mm of orders1] (enr1) {orders\_enriched};
+\node[newmodel, right=4mm of enr1, yshift=-3mm] (tagg1) {tier\_agg};
+\node[model, above right=1mm and 4mm of tagg1] (rev1) {revenue\_by\_tier};
+\node[model, below right=1mm and 4mm of tagg1] (top1) {top\_products};
+\draw[edge] (orders1) -- (enr1);
+\draw[edge] (catalog1) -- (ptiers1);
+\draw[edge] (ptiers1) -- (enr1);
+\draw[edge] (enr1) -- (tagg1);
+\draw[edge] (tagg1) -- (rev1);
+\draw[edge] (tagg1) -- (top1);
+\node[annot] at ($(tagg1.north) + (0,2mm)$) {1};
+\node[annot] at ($(enr1.north) + (0,2mm)$) {2};
+\node[annot] at ($(tagg1.south) + (0,-2mm)$) {3};
+\node[annot] at ($(ptiers1.north) + (0,2mm)$) {4};
+
+\end{tikzpicture}
+
+\vspace{2mm}
+
+\begin{minipage}{0.97\textwidth}
+\footnotesize
+\begin{tabular}{@{}r@{\hspace{1.5mm}}p{0.92\textwidth}@{}}
+\textbf{(1)} & \emph{Dependency-edge simplification.} Producer-consumer edges identify SQL boundaries that can be replaced, bypassed, or shifted when an equivalent relationship exists across the boundary. \\[0.5mm]
+\textbf{(2)} & \emph{Non-local semantic reuse.} Similar logic in separate parts of the graph can be factored into a shared computation even when the SQL text differs. \\[0.5mm]
+\textbf{(3)} & \emph{Rewrite-materialization co-optimization.} A shared intermediate is useful only under the right persistence choice; rewriting and persistence must be optimized together. \\[0.5mm]
+\textbf{(4)} & \emph{Frequency-aware optimization.} The expensive classification depends only on weekly data but is recomputed inside an hourly transformation; splitting it onto the slow cadence requires a pipeline rewrite invisible to per-query cost. \\
+\end{tabular}
+\end{minipage}
+
+\caption{A compact example of optimization opportunities exposed by an explicit SQL pipeline DAG. Once dependencies are visible, the optimizer can simplify dependency edges, factor repeated logic, co-optimize rewriting with persistence, and split slow-changing logic off fast refresh paths.}
+\label{dag:fig:intro-example}
+\end{figure*}
+
+This setting differs from traditional query optimization in six ways that matter for our problem. Figure~\ref{dag:fig:intro-example} previews several of the changes these differences make possible.
+
+\head{\textbf{(1) Dependency-edge simplification}}
+The graph identifies explicit boundaries between SQL transformations: which output is produced at one node, which later nodes read it, and which final outputs must remain unchanged. These boundaries are optimization choices, not just execution constraints. A dependency-aware optimizer can therefore bypass an intermediate node, inline part of a producer, pull a predicate from a consumer into a producer, or replace a dependency on one node with an equivalent expression over another node, as long as the final pipeline outputs are preserved. This is stronger than expanding a view inside one query: the optimizer can change how SQL is divided across transformations, not merely optimize the compiled text of one statement.
+
+\head{\textbf{(2) Non-local semantic reuse}}
+The graph exposes similar business logic that appears in different parts of the pipeline, often under different names or SQL structure. A dependency-aware optimizer can factor repeated work into a shared computation and rewrite consumers to use that shared result. This is not limited to syntactic common subexpressions: two transformations may compute the same logical quantity using different predicates, aliases, joins, or intermediate names.
+
+\head{\textbf{(3) Downstream-aware pruning}}
+Downstream transformations reveal which columns, joins, or intermediate results are never consumed by any final output. A dependency-aware optimizer can remove such work safely because the graph proves that no later transformation depends on it. A one-query rewriter can remove locally dead expressions inside one statement, but it cannot know whether an intermediate result produced for the pipeline is actually read later.
+
+\head{\textbf{(4) Pipeline-aware work placement}}
+The graph shows where expensive operations occur relative to filters, projections, aggregations, and joins. A dependency-aware optimizer can move expensive work after data-reducing steps as long as final outputs are not impacted. This opportunity is pipeline-level because the data-reducing step and the expensive operation may be separated across transformation boundaries.
+
+\head{\textbf{(5) Rewrite-materialization co-optimization}}
+The graph shows which rewritten results would be reused and where recomputation would occur if they are not persisted. A dependency-aware optimizer can choose rewrites and persistence choices together, since a rewrite can create new persistence opportunities and persistence can determine whether a rewrite helps. For example, a shared transformation may reduce cost when written once as a table but increase cost when inlined as a view under several consumers.
+
+\head{\textbf{(6) Frequency-aware optimization}}
+Schedules and source update rates reveal how often inputs change and outputs are consumed. A dependency-aware optimizer can align computation frequency with input-change rates and output-consumption rates, avoiding refreshes that do not impact consumers. In cloud warehouses, these rates translate directly into cost and latency objectives: if a weekly source feeds an hourly transformation, any computation that depends only on the weekly source is being repeated unnecessarily; if an output is consumed daily, hourly refresh may be waste even when the SQL statement itself is individually optimized.
+
+Together, these properties define a distinct optimization setting. The optimizer is reasoning not about one query, nor merely about an unordered set of independent queries, but about a recurring SQL pipeline program whose graph structure, final outputs, persistence choices, and refresh behavior interact.
+
+We now illustrate three representative classes that \dagsmith discovers. Each requires the optimizer to read and reason about SQL definitions across transformation boundaries within the DAG. The SQL in each example is simplified for presentation; domain-specific details are abstracted away.
+
+%==============================================================
+% EXAMPLE 1: Semantic Factorization
+%==============================================================
+\head{Example 1: Non-local semantic reuse}
+A pipeline contains seven classifier transformations that each tag orders with a service category (\code{dialysis}, \code{psychiatric}, and five others).
+The input is a \code{claims} table in which each row represents one item of an order, so a single order has many rows.
+Each classifier scans \code{claims}, keeps rows whose codes match its category's code list, and returns the distinct \code{order\_id}s of those rows.
+The seven classifiers have \emph{different} SQL: different predicates, different code vocabularies, and in some cases different join structures.
+Two representative classifiers are shown on the left of Figure~\ref{dag:fig:ex-factorization}.
+
+
+\begin{figure}[!htbp]
+\begin{minipage}[t]{0.48\linewidth}
+\figsubheader{Before: 7 classifiers (2 shown)}
+\begin{lstlisting}[language=SQL]
+-- dialysis_classifier
+SELECT DISTINCT order_id
+FROM {{ ref('claims') }}
+WHERE bill_code LIKE '72%'
+   OR taxonomy IN (set_dia_tax)
+   OR diagnosis IN (set_dia_dx)
+
+
+-- psychiatric_classifier
+SELECT DISTINCT order_id
+FROM {{ ref('claims') }}
+WHERE revenue IN (set_psy_rev)
+   OR diagnosis BETWEEN
+        '290' AND '319'
+\end{lstlisting}
+\vspace{1.6\baselineskip}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\figsubheader{After: precomputation+lookups}
+\begin{lstlisting}[language=SQL]
+-- order_flags (new)
+SELECT order_id,
+  MAX(CASE WHEN bill_code LIKE '72%'
+    OR taxonomy IN (set_dia_tax)
+    OR diagnosis IN (set_dia_dx)
+    THEN 1 ELSE 0 END) AS f_dia,
+  MAX(CASE WHEN ... 
+    THEN 1 ELSE 0 END) AS f_psy,
+  ...   -- 7 categories
+FROM {{ ref('claims') }}
+GROUP BY order_id
+ 
+-- dialysis_classifier (rewritten)
+SELECT order_id
+FROM {{ ref('order_flags') }}
+WHERE f_dia = 1
+\end{lstlisting}
+\end{minipage}
+\caption{Non-local semantic reuse. Seven classifiers with no syntactic overlap perform the same semantic operation on a shared parent. \dagsmith synthesizes a new shared transformation that pre-aggregates all classifier flags in one pass.}
+\label{dag:fig:ex-factorization}
+\end{figure}
+
+
+
+
+The seven classifiers share no common subexpression, yet they all perform the same \emph{semantic operation}: for each order, decide whether any of its rows match a category-specific predicate.
+\dagsmith recognizes this cross-transformation pattern and factors it.
+It synthesizes a new intermediate transformation \code{order\_flags} that, in a single pass over \code{claims}, computes one boolean flag per category by aggregating each category's predicate with \code{MAX(CASE WHEN ... THEN 1 ELSE 0 END)} grouped by \code{order\_id}.
+Each original classifier is then rewritten as a lightweight lookup: select the orders whose corresponding flag in \code{order\_flags} is~$1$.
+Seven full scans and seven independent grouping passes over \code{claims} are replaced with one pre-aggregation pass and seven inexpensive boolean filters.
+ 
+This optimization requires three capabilities that go beyond traditional techniques.
+First, the optimizer must recognize that seven syntactically dissimilar transformations perform the same semantic operation, which syntactic subexpression matching, the basis of multi-query optimization (MQO)~\cite{sellis1988multiple} and common subexpression elimination, cannot do.
+Second, it must \emph{invent} a new intermediate transformation absent from the original project; materialized view recommendation tools~\cite{agrawal2000automated} synthesize candidate views, but they too rely on syntactic subexpression mining, of which the seven classifiers share none.
+Third, it must rewrite the dependent transformations to consume the new intermediate while preserving end-to-end equivalence, a multi-transformation restructuring that single-query rewrite systems~\cite{wetune,sun2024r} do not attempt.
+
+%==============================================================
+% EXAMPLE 2: Cross-Boundary Reasoning
+%==============================================================
+\head{Example 2: Dependency-edge simplification}
+The same project contains a classifier \code{nursing} that filters for skilled-nursing claims by facility code, then performs an anti-join against a sibling transformation \code{equipment} to exclude equipment-related claims (Figure~\ref{dag:fig:ex-crossboundary}, left).
+The anti-join forces the engine to produce \code{equipment}, build a hash table, and probe it for every row of \code{claims}; it also introduces a dependency edge that serializes the two transformations.
+
+
+
+\begin{figure}[!htbp]
+\begin{minipage}[t]{0.48\linewidth}
+\figsubheader{Before: anti-join}
+\begin{lstlisting}[language=SQL]
+-- nursing
+SELECT *
+FROM {{ ref('claims') }} c
+WHERE c.facility_code
+        IN ('31','32')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM {{ ref('equipment') }} e
+    WHERE e.order_id = c.order_id
+      AND e.line_id  = c.line_id)
+ 
+-- equipment (just a filter)
+SELECT *
+FROM {{ ref('claims') }}
+WHERE category = 'equipment'
+\end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\figsubheader{After: predicate}
+\begin{lstlisting}[language=SQL]
+-- nursing (rewritten)
+SELECT *
+FROM {{ ref('claims') }} c
+WHERE c.facility_code
+        IN ('31','32')
+  AND (c.category IS NULL
+    OR c.category <> 'equipment')
+
+
+ 
+-- equipment is removed if no
+-- other transformation reads it;
+-- otherwise its definition
+-- is unchanged.
+\end{lstlisting}
+\vspace{1.6\baselineskip}
+\end{minipage}
+\caption{Dependency-edge simplification. By reading the SQL of the sibling transformation \code{equipment}, \dagsmith determines that the anti-join is equivalent to a scalar predicate on a shared parent. The hash anti-join, the auxiliary scan, and the dependency edge are all eliminated.}
+\label{dag:fig:ex-crossboundary}
+\end{figure}
+
+
+
+
+By reading the SQL definition of \code{equipment}, \dagsmith discovers that it computes nothing more than a single-predicate filter on a shared parent.
+The anti-join is therefore equivalent to an inline scalar predicate on \code{claims}, as shown on the right of the figure: the hash anti-join, the auxiliary scan, and the cross-transformation dependency are all eliminated.
+The same reasoning generalizes to every sibling classifier that uses \code{equipment} as an exclusion list, compounding the benefit across the pipeline.
+
+The equivalence enabling this rewrite is not declared anywhere; it is \emph{embedded in the SQL of another transformation file}.
+A traditional engine sees \code{equipment} either as a base table to be probed or as a view to be expanded into the local query, neither of which performs the cross-transformation analysis needed to eliminate the join entirely.
+We acknowledge a tradeoff: the rewrite couples \code{nursing} to the current definition of \code{equipment}, so a future change to that definition would require updating the rewritten consumers.
+In practice, stable upstream transformations such as \code{equipment} change rarely, and \dagsmith re-evaluates the project after each developer change, so the cost of re-deriving the rewrite is amortized over many executions.
+
+%==============================================================
+% EXAMPLE 3: Frequency-Aware
+%==============================================================
+\head{Example 3: Frequency-aware optimization}
+Different sources in a SQL pipeline DAG update at different rates, and the structure of the DAG determines how much computation must be repeated at each high-frequency refresh.
+Consider a transformation that joins fast-changing transactional data with slow-changing reference data and applies expensive classification logic to the slow-changing side (Figure~\ref{dag:fig:ex-frequency}, left).
+
+
+\begin{figure}[!htbp]
+\begin{minipage}[t]{0.48\linewidth}
+\figsubheader{Before: hourly classification}
+\begin{lstlisting}[language=SQL]
+-- order_summary  (hourly)
+SELECT o.order_id, o.amount,
+  CASE
+    WHEN p.code IN (set_A) THEN 'A'
+    WHEN p.code IN (set_B) THEN 'B'
+    ...
+  END AS category
+FROM {{ ref('orders') }}  o
+JOIN {{ ref('catalog') }} p
+  ON o.product_id = p.product_id
+
+  
+-- orders:  hourly
+-- catalog: weekly
+\end{lstlisting}
+\vspace{1.6\baselineskip}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\figsubheader{After: split by frequency}
+\begin{lstlisting}[language=SQL]
+-- product_categories (weekly)
+SELECT product_id,
+  CASE
+    WHEN code IN (set_A) THEN 'A'
+    WHEN code IN (set_B) THEN 'B'
+    ...
+  END AS category
+FROM {{ ref('catalog') }}
+ 
+-- order_summary (hourly)
+SELECT o.order_id, o.amount,
+       pc.category
+FROM {{ ref('orders') }} o
+JOIN {{ ref('product_categories') }} pc
+  USING (product_id)
+\end{lstlisting}
+\end{minipage}
+\caption{Frequency-aware optimization. Splitting the transformation along the frequency boundary moves expensive classification onto a weekly cadence; the hourly transformation becomes a lightweight join.}
+\label{dag:fig:ex-frequency}
+\end{figure}
+
+
+Because \code{orders} changes hourly, \code{order\_summary} re-executes hourly, and the multi-branch classification over \code{catalog} is recomputed on every hourly refresh, despite its inputs changing only weekly.
+\dagsmith traces the update frequency from each source through the DAG, identifies that this transformation has \emph{mixed-frequency inputs}, and splits it along the frequency boundary.
+The expensive classification is extracted into a new slow-frequency transformation, and the original transformation becomes a lightweight equi-join.
+When this pattern recurs across many consumers of the same slow-changing reference data, the savings compound: each hourly refresh avoids redundant recomputation of logic whose inputs have not changed.
+
+This optimization is invisible to optimizers that treat cost as a fixed per-query quantity: the benefit of splitting the transformation is realized only when the two halves are known to execute at different rates.
+Materialized view selection considers update cost but does not restructure the DAG to align computation with update frequency, and traditional query rewriters have no notion of refresh schedule at all.
+
+\clearpage
+\null
+\thispagestyle{empty}
+\clearpage
+
+\end{comment}
+
+\subsection{Motivating Examples}
+\label{dag:sec:motivating-examples}
+
+% In this section, we use a small claims-processing DAG to illustrate how explicit dependencies expose optimization opportunities that are invisible when each query is rewritten in isolation. For space, the examples combine multiple opportunities in one small claims-processing DAG; in practice, each opportunity can appear independently inside much larger DAGs with hundreds or thousands of models. Figure~\ref{dag:fig:strategy-c-graph}(a) shows the original pipeline. 
+% Here, we use a simplified healthcare claims-processing pipeline, inspired by the open-source Tuva project~\cite{tuvaProject}.
+
+We illustrate optimization opportunities on a small healthcare claims-processing DAG inspired by the open-source Tuva project~\cite{tuvaProject}; for space it combines several that in practice appear independently inside much larger DAGs with hundreds or thousands of models. Figure~\ref{dag:fig:strategy-c-graph}(a) shows the original pipeline.
+Its main input is \code{claims}, a large table of claim-line records that is refreshed frequently. It feeds into 
+service-category models such as \code{dialysis}, \code{psychiatric}, \code{equipment}, and \code{nursing}. These models classify claim lines using SQL predicates over claim attributes; Figure~\ref{dag:fig:strategy-c-sql} gives simplified examples. The \code{nursing} model excludes claim lines already categorized as equipment, so it reads \code{equipment} as an exclusion list. The \code{claims\_summary} model joins claim lines with a 
+slow-changing lookup table, \code{code\_catalog}, that maps raw claim codes to descriptions, and then applies code-grouping logic over those descriptions. We next describe three examples that exploit these explicit dependencies; when all applied together, they produce the more efficient DAG in Figure~\ref{dag:fig:strategy-c-graph}(b).
+
+\begin{figure*}[t]
+\inv
+\centering
+{ \input{chapters/dagsmith/figures/motivation_dag_graph}}
+\inv
+\caption{Healthcare SQL pipeline DAG used for three motivating examples. The dotted line separates the original DAG (a) from the cumulative rewritten DAG (b). The rewritten DAG introduces reusable \code{service\_flags}, rewrites downstream models (\code{dialysis}, \code{psychiatric}, and \code{nursing}), removes the \code{equipment} dependency from \code{nursing}, and moves slow-changing reference-code grouping out of the fast claims path. }
+\label{dag:fig:strategy-c-graph}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\captionsetup[subfigure]{justification=centering}
+\begin{subfigure}[t]{0.32\textwidth}
+\centering
+\begin{minipage}[t][51mm][t]{\linewidth}
+{\scriptsize\textbf{Exposes:} cross-graph redundancy; reuse context\par}
+{\scriptsize\textbf{Enables:} non-local reuse; rewrite-materialization co-optimization\par\smallskip}
+{\scriptsize\textbf{Before}\par}
+\begin{lstlisting}[language=SQL,basicstyle=\ttfamily\tiny,breaklines=true]
+-- dialysis model
+SELECT DISTINCT claim_id
+FROM claims
+WHERE bill_code LIKE '72%'
+   OR taxonomy IN (...);
+\end{lstlisting}
+{\scriptsize\textbf{After}\par}
+\begin{lstlisting}[language=SQL,basicstyle=\ttfamily\tiny,breaklines=true]
+-- new service_flags model
+SELECT claim_id,
+  MAX(bill_code LIKE '72%' OR taxonomy IN (...)) AS f_dia,
+  MAX(diagnosis BETWEEN '290' AND '319') AS f_psy
+FROM claims;
+
+-- rewritten dialysis model
+SELECT claim_id FROM service_flags
+WHERE f_dia;
+\end{lstlisting}
+\end{minipage}
+\caption{Example 1: shared service flags}
+\label{dag:fig:strategy-c-sql-reuse}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.32\textwidth}
+\centering
+\begin{minipage}[t][51mm][t]{\linewidth}
+{\scriptsize\textbf{Exposes:} edge semantics; downstream demand\par}
+{\scriptsize\textbf{Enables:} edge simplification; downstream-aware pruning\par\smallskip}
+{\scriptsize\textbf{Before}\par}
+\begin{lstlisting}[language=SQL,basicstyle=\ttfamily\tiny,breaklines=true]
+-- nursing model
+SELECT * FROM claims c
+WHERE c.facility_code IN ('31','32')
+AND NOT EXISTS (
+  SELECT 1 FROM equipment e
+  WHERE e.claim_id = c.claim_id);
+\end{lstlisting}
+{\scriptsize\textbf{After}\par}
+\begin{lstlisting}[language=SQL,basicstyle=\ttfamily\tiny,breaklines=true]
+-- rewritten nursing model
+SELECT * FROM claims c
+WHERE c.facility_code IN ('31','32')
+  AND c.category <> 'equipment';
+
+-- equipment has no remaining consumers
+\end{lstlisting}
+\end{minipage}
+\caption{Example 2: removing an exclusion edge}
+\label{dag:fig:strategy-c-sql-edge}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.32\textwidth}
+\centering
+\begin{minipage}[t][51mm][t]{\linewidth}
+{\scriptsize\textbf{Exposes:} refresh patterns; operator placement\par}
+{\scriptsize\textbf{Enables:} frequency-aware optimization; work placement\par\smallskip}
+{\scriptsize\textbf{Before}\par}
+\begin{lstlisting}[language=SQL,basicstyle=\ttfamily\tiny,breaklines=true]
+-- claims_summary model
+SELECT c.id, group_code(r.description) AS grp
+FROM claims c JOIN code_catalog r USING(code);
+\end{lstlisting}
+{\scriptsize\textbf{After}\par}
+\begin{lstlisting}[language=SQL,basicstyle=\ttfamily\tiny,breaklines=true]
+-- new service_code_flags model
+SELECT code, group_code(description) AS grp
+FROM code_catalog;
+
+-- rewritten claims_summary model
+SELECT c.id, f.grp
+FROM claims c JOIN service_code_flags f USING(code);
+\end{lstlisting}
+\end{minipage}
+\caption{Example 3: precomputing slow-side logic}
+\label{dag:fig:strategy-c-sql-frequency}
+\end{subfigure}
+\caption{SQL fragments for the healthcare examples in Figure~\ref{dag:fig:strategy-c-graph}. Each panel corresponds to one motivating example: (a) Example 1 factors repeated service-category logic into shared flags, (b) Example 2 removes an exclusion-list dependency, and (c) Example 3 moves slow-side grouping out of the fast claims path. Each panel separates the original SQL from the rewritten SQL.}
+\label{dag:fig:strategy-c-sql}
+\inv
+\end{figure*}
+
+
+\head{Example 1: Cross-graph redundancy + rewrite-persistence coupling}
+In Figure~\ref{dag:fig:strategy-c-graph}(a), the fanout from \code{claims} to the service-category models (\code{dialysis}, \code{psychiatric}, \code{equipment}, and \code{nursing})
+exposes cross-graph redundancy: several models scan the same large source (i.e., \code{claims}), and evaluate related billing-code, taxonomy-code, or diagnosis-code predicates in separate SQL files. By exploiting this redundancy, one can create the shared \code{service\_flags} model in Figure~\ref{dag:fig:strategy-c-graph}(b) and rewrite each of the downstream models  to read the corresponding flag. Figure~\ref{dag:fig:strategy-c-sql-reuse} shows the rewrite for \code{dialysis}; the other service-category models can be rewritten similarly by reading their own flags.
+In \S\ref{dag:sec:dependencies-as-signals}, we call this non-local semantic reuse.
+
+This shared model also creates a materialization choice: computing extra flags such as \code{f\_psy} pays off only when \code{service\_flags} is persisted once and reused, rather than inlined under each consumer. This is rewrite-materialization co-optimization in \S\ref{dag:sec:dependencies-as-signals}.
+
+
+\head{Example 2: Edge semantics + downstream demand}
+We can also exploit the edge semantics in Figure~\ref{dag:fig:strategy-c-graph}(a): the edge from \code{equipment} to \code{nursing} implies that \code{nursing} consumes \code{equipment}, but the SQL definitions show that \code{nursing} uses \code{equipment} only to exclude claim lines whose category is equipment. 
+Figure~\ref{dag:fig:strategy-c-sql-edge} shows that the original \code{nursing} SQL anti-joins against \code{equipment}, while the rewrite uses a direct predicate over \code{claims}. This avoids building or scanning \code{equipment} as an exclusion list and removes the anti-join from \code{nursing};  we called this dependency-edge simplification in \S\ref{dag:sec:dependencies-as-signals}.
+
+The graph also exposes downstream demand: after this rewrite, if no remaining edge leaves \code{equipment}, no final output can observe it and the model can be skipped entirely. We referred to this as downstream-aware pruning in \S\ref{dag:sec:dependencies-as-signals}.
+
+\head{Example 3: Refresh + placement}
+The \code{claims\_summary} model in Figure~\ref{dag:fig:strategy-c-graph}(a) combines fast-changing claims with slow-changing reference codes and then applies code-grouping logic after the join. 
+As Figure~\ref{dag:fig:strategy-c-sql-frequency} shows, \code{group\_code} depends only on the slow-changing \code{code\_catalog}, but the original \code{claims\_summary} evaluates it after joining into the high-volume \code{claims} stream. The recurring DAG exposes source update rates and consumer refresh schedules, so moving \code{group\_code} into \code{service\_code\_flags} lets the grouped lookup be recomputed only when the lookup table changes or consumers need it, while also applying the grouping before the join expands data volume. These are called frequency-aware optimization and pipeline-aware work placement in \S\ref{dag:sec:dependencies-as-signals}.
+
+\subsection{Why Existing Techniques Fall Short}
+\label{dag:sec:why-different}
+
+
+The examples above point to a broader limitation: pipeline rewriting needs information that is distributed across the dependency graph, not only inside the query being rewritten.
+Single-query rewrite systems~\cite{wetune,sun2024r} operate within the boundary of one query and cannot see the upstream queries that define its inputs or the downstream queries that consume its output.
+Multi-query optimization and common subexpression elimination~\cite{sellis1988multiple} share intermediate computations across queries but rely on syntactic matching, so they miss the cross-query semantic equivalence illustrated in Figure~\ref{dag:fig:strategy-c-sql-reuse}.
+Materialized view selection~\cite{agrawal2000automated} can choose which existing results to persist, but it does not rewrite the DAG to move slow-changing work out of a fast-refresh path, as illustrated in Figure~\ref{dag:fig:strategy-c-sql-frequency}.
+
+
+% The gap is not that these techniques are poorly designed; it is that none treats an explicit SQL dependency graph as the unit of rewriting.
+% Dependency-aware rewriting must combine capabilities that are usually considered separately:
+% use producer and consumer context, find semantic reuse beyond syntactic overlap, prune work that no downstream output consumes, move expensive work after data-reducing steps, evaluate rewrites together with persistence choices, and account for recurring refresh behavior.
+% The remainder of this paper presents an approach that integrates these capabilities into a coherent rewriting framework.
+The gap is not that these techniques are poorly designed; it is that none treats an explicit SQL dependency graph as the unit of rewriting, combining capabilities usually considered separately. The remainder of this paper presents an approach that integrates them into a coherent rewriting framework.
+
+
+
+
+
+
+\begin{comment}
+    
+
+
+\begin{figure}[t]
+\figsubheader{Before: 7 independent classifiers (2 shown)}
+% \centering\textbf{Before: 7 independent classifiers (2 shown)}
+\begin{lstlisting}[language=SQL]
+-- dialysis_classifier
+SELECT DISTINCT order_id
+FROM {{ ref('claims') }}
+WHERE bill_code LIKE '72%'
+   OR taxonomy IN (set_dialysis_tax)
+   OR diagnosis IN (set_dialysis_dx)
+
+-- psychiatric_classifier
+SELECT DISTINCT order_id
+FROM {{ ref('claims') }}
+WHERE revenue IN (set_psych_rev)
+   OR diagnosis BETWEEN '290' AND '319'
+\end{lstlisting}
+
+\figsubheader{After: shared pre-aggregation + lookups}
+% \centering\textbf{After: shared pre-aggregation + lookups}
+\begin{lstlisting}[language=SQL]
+-- order_flags  (new shared model)
+SELECT order_id,
+  MAX(CASE WHEN bill_code LIKE '72%'
+        OR taxonomy IN (set_dialysis_tax)
+        OR diagnosis IN (set_dialysis_dx)
+       THEN 1 ELSE 0 END) AS f_dialysis,
+  MAX(CASE WHEN ... THEN 1 ELSE 0 END) AS f_psych,
+  ...  -- flags for all 7 categories
+FROM {{ ref('claims') }}
+GROUP BY order_id
+
+-- dialysis_classifier (rewritten)
+SELECT order_id FROM {{ ref('order_flags') }}
+WHERE f_dialysis = 1
+\end{lstlisting}
+\caption{Cross-model semantic factorization. Seven classifiers with no syntactic overlap perform the same semantic operation on a shared parent. \dagsmith synthesizes a new shared model that pre-aggregates all classifier flags in one pass.}
+\label{dag:fig:ex-factorization}
+\end{figure}
+
+=========================
+
+
+
+
+\begin{figure}[t]
+\figsubheader{Before: anti-join against sibling model}
+% \centering\textbf{Before: anti-join against sibling model}
+\begin{lstlisting}[language=SQL]
+-- nursing
+SELECT *
+FROM {{ ref('claims') }} c
+WHERE c.facility_code IN ('31','32')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM {{ ref('equipment') }} e
+    WHERE e.order_id = c.order_id
+      AND e.line_id  = c.line_id)
+
+-- equipment  (definition is just a filter)
+SELECT * FROM {{ ref('claims') }}
+WHERE category = 'equipment'
+\end{lstlisting}
+
+\figsubheader{After: anti-join replaced with predicate}
+% \centering\textbf{After: anti-join replaced with predicate}
+\begin{lstlisting}[language=SQL]
+-- nursing  (rewritten)
+SELECT *
+FROM {{ ref('claims') }} c
+WHERE c.facility_code IN ('31','32')
+  AND (c.category IS NULL
+    OR c.category <> 'equipment')
+
+-- equipment is removed if no other model
+-- depends on it; otherwise its definition
+-- is unchanged.
+\end{lstlisting}
+\caption{Cross-boundary semantic reasoning. By reading the SQL of the sibling \code{equipment} model, \dagsmith determines that the anti-join is equivalent to a scalar predicate on a shared parent. The hash anti-join, the auxiliary scan, and the DAG dependency are all eliminated.}
+\label{dag:fig:ex-crossboundary}
+\end{figure}
+
+
+
+=========================
+
+
+
+\begin{figure}[t]
+\figsubheader{Before: classification re-runs hourly}
+% \centering\textbf{Before: classification re-runs hourly}
+\begin{lstlisting}[language=SQL]
+-- order_summary  (runs hourly)
+SELECT o.order_id, o.amount,
+  CASE
+    WHEN p.code IN (set_A) THEN 'A'
+    WHEN p.code IN (set_B) THEN 'B'
+    ...
+  END AS category
+FROM {{ ref('orders') }}  o   -- hourly
+JOIN {{ ref('catalog') }} p   -- weekly
+  ON o.product_id = p.product_id
+\end{lstlisting}
+
+\figsubheader{After: split along frequency boundary}
+% \centering\textbf{After: split along frequency boundary}
+\begin{lstlisting}[language=SQL]
+-- product_categories  (new, runs weekly)
+SELECT product_id,
+  CASE
+    WHEN code IN (set_A) THEN 'A'
+    WHEN code IN (set_B) THEN 'B'
+    ...
+  END AS category
+FROM {{ ref('catalog') }}
+
+-- order_summary  (rewritten, hourly, lightweight)
+SELECT o.order_id, o.amount, pc.category
+FROM {{ ref('orders') }} o
+JOIN {{ ref('product_categories') }} pc
+  USING (product_id)
+\end{lstlisting}
+\caption{Frequency-aware restructuring. Splitting the model along the frequency boundary moves expensive classification onto a weekly cadence; the hourly model becomes a lightweight join.}
+\label{dag:fig:ex-frequency}
+\end{figure}
+
+
+
+
+
+
+
+
+
+\end{comment}

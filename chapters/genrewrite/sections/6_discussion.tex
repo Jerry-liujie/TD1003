@@ -1,0 +1,14 @@
+\section{Discussion}
+\label{gen:sec:discussion}
+
+Determining the equivalence of rewrites is a common challenge for all LLM-based approaches. Even the most powerful SQL verifier to date, SQLSolver~\cite{ding2023proving}, can verify only 18.9\% of the generated TPC-DS rewrites. The verification rate is significantly higher for the JOB benchmark at 74.4\%, yet it still fails to verify all rewrites. Moreover, as queries grow more complex, it becomes increasingly difficult for testers to spot inequivalent queries. To ensure correctness, all rewrites reported in the evaluation section have been manually inspected.
+Although verifying equivalence can be resource-intensive, the potential benefit of identifying a significantly more efficient rewrite often justifies the cost. 
+% For example, several TPC-DS queries have runtimes exceeding one hour, whereas \genrewrite is able to generate equivalent rewrites that reduce execution time by more than an order of magnitude. As a reference point, a Snowflake ``Small'' virtual warehouse costs about \$2.00 per hour. 
+The modest investment in LLM usage can yield substantial savings by reducing data warehouse compute costs, especially for long-running queries.
+In the context of recurring query execution, \genrewrite can serve as an automated system to propose query pairs that uncover valuable traditional rewrite rules. Consequently, \genrewrite is not designed to replace rule-based methods; rather, it leverages the capabilities of LLMs to identify promising rules that can be integrated into existing database. \revtwo{\genrewrite returns verified  query pairs that deliver measured speedups together with the associated NLR2. A rule distilled from only one such pair is brittle and often fails to generalize—it overfits incidental syntax choices and misses necessary preconditions. We can aggregate multiple verified pairs tied to the same NLR2, and extract the common AST/plan transformation plus explicit guards/preconditions. As more pairs accumulate, the resulting pattern-matching rule becomes more general  while remaining safe.
+% \footnote{In Appendix~B, we present a concrete example showing how NLR2 clusters query pairs with shared issues, allowing us to extract robust rewrite rules suitable for database implementation.}
+}
+
+
+
+% Microsoft: The need for global optimization decisions is further motivated by the observation that business-critical jobs in analytics clusters are typically recurrent. Instances of the same job are issued periodically over new batches of data, e.g., hourly, daily, or weekly. In fact, over 60% of the jobs in our clusters are recurrent, with the majority of them being submitted daily.

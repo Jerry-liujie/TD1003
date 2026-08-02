@@ -1,0 +1,37 @@
+% Phase-1 draft abstract, adapted from the thesis proposal abstract.
+% TODO: revise, and check Rackham's abstract length limit (550 words).
+This dissertation studies how program synthesis and large language
+models (LLMs) can rewrite SQL beyond existing rule-based optimizers,
+progressing from single-query transformations to full SQL pipeline
+refactoring.
+
+SlabCity is a whole-query, synthesis-based SQL rewriter that searches
+for semantically equivalent, faster queries without relying on
+predefined rules. It defines dataflows for SQL queries and uses them
+to stratify the synthesis search space via a novel dataflow-based
+scoring function that focuses the search on promising rewrites, within
+a counterexample-guided inductive synthesis loop that resorts to SMT
+verification only when needed. On curated LeetCode and Calcite
+workloads, it rewrites more queries and achieves multi-fold latency
+reductions compared to rule-based systems.
+
+GenRewrite targets the same single-query setting but replaces
+synthesis-based search with LLM-guided generation anchored by
+Natural-Language Rewrite Rules (NLR2s), which capture successful
+rewrite strategies in human-readable form and transfer rewriting
+knowledge across queries. Across TPC-DS and JOB (including their
+SQLStorm-generated variants), GenRewrite attains higher coverage and
+larger speedups than both rule-based systems and baseline LLM
+prompting.
+
+DAGSmith lifts these ideas from single queries to pipelines of
+interdependent SQL models. Given a workload represented as a query
+DAG, it combines structural graph analysis, LLM-guided refactoring
+with data-backed equivalence checking, learned cost modeling,
+materialization tuning via iterative ILP, and frequency-aware
+scheduling to produce output-equivalent pipelines that are
+significantly cheaper and faster end to end.
+
+Together, these systems trace a path from synthesis to LLMs for SQL
+query rewriting beyond rules, delivering substantial performance gains
+from individual queries to large, dependency-rich SQL pipelines.

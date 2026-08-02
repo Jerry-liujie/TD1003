@@ -1,0 +1,52 @@
+% !TEX root = ../VLDB-2026-DAGSmith-Dependency-Aware-Rewriting-for-dbt-Style-SQL-Pipelines.tex
+
+% !TEX root = ../VLDB-2026-DAGSmith-Dependency-Aware-Rewriting-for-dbt-Style-SQL-Pipelines.tex
+\section{Related Work}
+\label{dag:sec:related}
+
+
+\head{Positioning}
+\dagsmith is, to the best of our knowledge, the first system to treat the explicit pipeline DAG as the unit of dependency-aware rewriting, restructuring node boundaries and deciding refactoring, materialization, and refresh frequency jointly. The closest lines of work each address only part of this in isolation.
+
+\head{Single-query SQL rewriting}
+Rule-based rewriters~\cite{wetune,LR}, program-synthesis rewriters~\cite{dong2023slabcity}, and LLM-based rewriters~\cite{genrewrite,sun2024r,li2024llm} transform a query into an equivalent form before the database optimizer plans it; two of our baselines, LearnedRewrite~\cite{LR} and GenRewrite~\cite{genrewrite}, are of this kind. All optimize one statement in isolation and leave the surrounding dependency graph unchanged.
+
+\head{Multi-query optimization and view selection}
+Multi-query optimization~\cite{sellis1988multiple,roy2000efficient} and common-subexpression sharing~\cite{scopeCSE,similarSubexpr} reuse intermediate results across statements, and materialized-view selection~\cite{agrawal2000automated,harinarayan1996implementing} precomputes chosen results and rewrites consumers to read them; our cross-model CSE baseline follows this line~\cite{scopeCSE}. These techniques match on syntactic structure and select persistence among results that already exist, without recognizing the same computation written in dissimilar SQL or trimming results no downstream output needs.
+
+% They do not recognize the same logical computation written in dissimilar SQL, as in Figure~\ref{dag:fig:strategy-c-sql-reuse},  and they keep every output intact, sharing how results are computed but never which are needed \linc{$\leftarrow$ I don't understand this last phrase...}; \dagsmith reads downstream demand to trim redundant computation and simplify the dependency graph (Figure~\ref{dag:fig:strategy-c-sql-edge}).
+
+\head{View maintenance and refresh scheduling}
+Incremental view maintenance~\cite{ivm} and streaming materialized-view systems~\cite{materialize,risingwave} keep derived results fresh by processing only the rows that change, lowering the cost of each refresh. \dagsmith instead aligns how often each node runs with how often its inputs change and its outputs are consumed, a complementary direction that could compose with theirs.
+
+\head{Workflow orchestration}
+dbt~\cite{dbtWhatExactly}, SQLMesh~\cite{sqlmeshOverview}, Airflow~\cite{airflowDags}, Dagster~\cite{dagsterAssets}, Prefect~\cite{prefectTasks}, Argo~\cite{argoDag}, Luigi~\cite{luigiDocs}, and Databricks Workflows~\cite{databricksJobs} express recurring transformations and their dependencies as a DAG, the setting \dagsmith targets. Their schedulers optimize execution order, invalidation, retries, and resource allocation, but leave the SQL semantics of each node untouched, which is where \dagsmith's reductions originate.
+
+
+\begin{comment}
+    
+
+\section{Related Work}
+\label{dag:sec:related}
+
+
+\head{Positioning}
+\dagsmith is, to the best of our knowledge, the first system to treat the explicit pipeline DAG as the unit of dependency-aware rewriting, restructuring node boundaries and deciding refactoring, materialization, and refresh frequency jointly. We now discuss several closest lines of work.
+
+
+\head{Single-query SQL rewriting}
+Rule-based rewriters~\cite{wetune,LR}, program-synthesis rewriters~\cite{dong2023slabcity}, and LLM-based rewriters~\cite{genrewrite,sun2024r,li2024llm} transform a query into an equivalent form before the database optimizer plans it; two of our baselines, LearnedRewrite~\cite{LR} and GenRewrite~\cite{genrewrite}, are of this kind. All of them optimize one statement in isolation and leave the surrounding dependency graph unchanged, so rewrites whose benefit depends on neighboring transformations, such as reusing logic across models or removing work that no downstream output consumes, fall outside their scope.
+
+\head{Multi-query optimization and view selection}
+Multi-query optimization~\cite{sellis1988multiple,roy2000efficient} and common-subexpression sharing~\cite{scopeCSE,similarSubexpr} reuse intermediate results across statements, and materialized-view selection~\cite{agrawal2000automated,harinarayan1996implementing} precomputes chosen results and rewrites consumers to read them; our cross-model CSE baseline follows this line~\cite{scopeCSE}. These techniques match on syntactic structure and select persistence among candidates that already exist. They do not recognize the same logical computation written in dissimilar SQL, as in Figure~\ref{dag:fig:strategy-c-sql-reuse}, and they reuse the computation behind existing results without considering whether each result is needed downstream, so they keep every output in place. \dagsmith{} instead reads downstream demand to trim redundant computation and simplify the dependency graph (Figure~\ref{dag:fig:strategy-c-sql-edge}).
+
+% They do not recognize the same logical computation written in dissimilar SQL, as in Figure~\ref{dag:fig:strategy-c-sql-reuse},  and they keep every output intact, sharing how results are computed but never which are needed \linc{$\leftarrow$ I don't understand this last phrase...}; \dagsmith reads downstream demand to trim redundant computation and simplify the dependency graph (Figure~\ref{dag:fig:strategy-c-sql-edge}).
+
+\head{View maintenance and refresh scheduling}
+Incremental view maintenance~\cite{ivm} and streaming materialized-view systems~\cite{materialize,risingwave} keep derived results fresh by processing only the rows that change, which lowers the cost of each refresh. \dagsmith addresses freshness from the opposite direction: rather than reducing the refresh cost of specific models, it aligns how often each node runs with how often its inputs change and its outputs are consumed, and it splits a node along a frequency boundary when slow-changing work is trapped on a fast cadence (Figure~\ref{dag:fig:strategy-c-sql-frequency}). The two approaches are complementary and could compose.
+
+\head{Workflow orchestration}
+dbt~\cite{dbtWhatExactly}, SQLMesh~\cite{sqlmeshOverview}, Airflow~\cite{airflowDags}, Dagster~\cite{dagsterAssets}, Prefect~\cite{prefectTasks}, Argo~\cite{argoDag}, Luigi~\cite{luigiDocs}, and Databricks Workflows~\cite{databricksJobs} express recurring transformations and their dependencies as a DAG, the setting \dagsmith targets. Their schedulers optimize execution order, invalidation, retries, and resource allocation, but they leave the SQL semantics of each node untouched, which is where \dagsmith's reductions originate.
+
+\end{comment}
+

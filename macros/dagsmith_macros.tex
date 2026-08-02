@@ -1,0 +1,73 @@
+% ============================================================
+% macros/dagsmith_macros.tex -- regenerated from the paper's macros.tex during the
+% dissertation merge. Renamed macros: \barzan->\dagbarzan, \cost->\dagcost, \jie->\dagjie, \tofix->\dagtofix, \tool->\dagsmith.
+% Duplicate names shared with earlier-loaded macro files use
+% \renewcommand (definitions are identical).
+% ============================================================
+% !TEX root = VLDB-2026-DAGSmith-Dependency-Aware-Rewriting-for-dbt-Style-SQL-Pipelines.tex
+\captionsetup[figure]{font=small, labelfont=bf}
+
+\newcommand{\dagcost}{\mathrm{cost}}
+\newcommand{\pred}{\mathrm{pred}}
+\newcommand{\override}[3]{#1\!\left[#2\leftarrow #3\right]}
+
+\renewcommand{\head}[1]{{{\vspace*{1mm} \noindent \textbf{#1.}}}}
+\newcommand{\ph}[1]{\vspace{1mm} \noindent \textbf{#1} ---}
+\newcommand{\bm}[1]{\textcolor{blue}{\textbf{BM:} #1}}
+\newcommand{\VM}[1]{\bm{#1}}
+\newcommand{\dagbarzan}[1]{\bm{#1}}
+\newcommand{\dagtofix}[1]{\textcolor{red}{#1}}
+% \newcommand{\RememberToChange}[1]{\textcolor{red}{#1}}
+\newcommand{\RememberToChange}[1]{{#1}}
+\renewcommand{\code}[1]{{\normalfont\ttfamily\small #1}}
+
+
+\newcommand{\dagsmith}{{DAGSmith}\xspace}
+
+
+\newfloat{listing}{htbp}{lol}
+\floatname{listing}{Listing}
+
+
+% Define a command for the internal figure headers
+\newcommand{\figsubheader}[1]{%
+    {\centering\small\textbf{#1}\par\medskip}%
+}
+
+\lstdefinestyle{dagsmithCode}{
+    language=SQL,
+    basicstyle=\tiny\ttfamily,
+    % --- Keyword Highlighting ---
+    keywordstyle=\color[HTML]{228B22}\bfseries, % Green for SQL keywords
+    ndkeywordstyle=\color[HTML]{228B22}\bfseries,
+    identifierstyle=\color{black},
+    commentstyle=\color{gray},
+    stringstyle=\color[HTML]{B22222},            % Dark red for strings like 's'
+    % --- Other Settings ---
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=5pt,
+    backgroundcolor=\color{gray!5},
+    frame=single,
+    rulecolor=\color{gray!40},
+    breaklines=true,
+    escapeinside={|}{|},
+    showstringspaces=false,
+    columns=flexible,
+    xleftmargin=2mm
+}
+
+
+\definecolor{lin}{HTML}{e31a1c}
+\newcommand{\linc}[1]{\textcolor{lin}{lin: #1}}
+
+\newcommand{\dagjie}[1]{\textcolor{blue}{Jie: #1}}
+
+\newcommand{\xxx}[1]{\sout{#1}}
+
+\renewcommand{\inv}{\vspace*{-2mm}}
+\renewcommand{\sinv}{\vspace*{-2mm}}
+
+% dissertation.cls defines a `code` environment; the paper's \code
+% command (renewcommand above) intentionally replaces it.
