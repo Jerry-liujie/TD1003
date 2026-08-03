@@ -4,6 +4,299 @@
 % starting point -- revise freely. TODO markers indicate places that
 % need your attention.
 %===================================================================
+
+%===================================================================
+% Chapter 1: Introduction
+%===================================================================
+\chapter{Introduction}
+\label{chap:intro}
+
+Fifty years after its invention, SQL is more central to computing than it
+has ever been. What began as a language for asking questions of a database
+has become the implementation language of the modern data stack: the
+dashboards an executive checks each morning, the feature tables that feed
+machine learning models, the reports a regulator receives, and the metrics
+behind customer-facing data products are all, underneath, SQL programs
+executed against a data warehouse.
+
+Two shifts distinguish today's SQL from the SQL of a decade ago. The first
+is who, or rather what, writes it. A growing share of SQL is produced by
+machines rather than people: business intelligence tools such as
+Looker~\cite{lookergoogle} compile point-and-click analyses into queries
+that routinely span hundreds of lines, a recent industry survey reports
+that most analytics professionals now use AI assistance for code
+development~\cite{dbt2025state}, and studies of BI-generated workloads
+find scalar expressions and operator trees of a complexity no human would
+write~\cite{getreal2018}. The second shift is how SQL is organized. Rather
+than living as isolated statements, SQL increasingly accumulates into
+recurring pipelines: version-controlled graphs of interdependent
+transformations, re-executed on a schedule, in which each query consumes
+the outputs of others. dbt, the most visible tool of this movement, is
+used by tens of thousands of data teams every
+week~\cite{dbtComplexity}, and the same dependency-structured pattern
+appears in SQLMesh~\cite{sqlmeshOverview}, Dagster~\cite{dagsterAssets},
+Airflow~\cite{airflowDags}, and the lakehouse architectures of every major
+cloud vendor~\cite{databricksMedallion}.
+
+
+These shifts unfold against a third, longer-running trend: the data
+itself keeps growing. IDC estimates that the world created, captured,
+and consumed more than 180 zettabytes of data in 2025, and projects
+nearly 400 zettabytes by 2028, more than doubling in three
+years~\cite{idcDataSphere2025}; an ever larger share of this data is
+centralized in cloud platforms precisely so that it can be
+queried~\cite{reinsel2018digitization}. Together, these trends have
+turned the quality of SQL into an economic quantity. Cloud data
+warehouses such as Snowflake~\cite{dageville2016snowflake} and
+BigQuery~\cite{fernandes2015bigquery} bill computation by usage, so
+the cost of a query grows with the data it scans, and an inefficient
+query no longer merely runs slowly: over gigabytes it is an annoyance,
+over terabytes it is a budget line, and inside a recurring pipeline it
+is a budget line paid again on every refresh. Practitioners
+consistently identify poorly written queries as a leading cause of
+performance problems in
+production~\cite{slow-query-impact-1,slow-query-impact-2,slow-query-impact-5}.
+The trends above only sharpen the issue, because the SQL that machines
+generate is precisely the SQL most likely to be written poorly. The
+result is a widening gap between the complexity of the queries
+organizations run, the volume of data they run them over, and the
+quality of the queries they could be running.
+
+
+% Together, these shifts have turned the quality of SQL into an economic
+% quantity. Cloud data warehouses such as
+% Snowflake~\cite{dageville2016snowflake} and
+% BigQuery~\cite{fernandes2015bigquery} bill computation by usage, so an
+% inefficient query no longer merely runs slowly: it costs money, and when
+% that query sits inside a recurring pipeline, it costs money again on every
+% refresh. Practitioners consistently identify poorly written queries as a
+% leading cause of performance problems in
+% production~\cite{slow-query-impact-1,slow-query-impact-2,slow-query-impact-5}.
+% The trends above only sharpen the issue, because the SQL that machines
+% generate is precisely the SQL most likely to be written poorly. The result
+% is a widening gap between the complexity of the queries organizations run
+% and the quality of the queries they could be running.
+
+One might hope that query optimizers close this gap, since choosing
+efficient execution strategies is exactly what they are for. But an
+optimizer operates within a boundary that is easy to overlook: it selects
+the best execution plan for the query it is given, not the best query its
+author could have written. Two semantically identical queries, phrased
+differently, can lead the same optimizer to plans whose running times
+differ by orders of magnitude. When the given phrasing is poor, the
+remedy must operate on the query itself. That remedy is query rewriting:
+transforming a query into a semantically equivalent form that the
+optimizer can turn into a faster plan.
+
+The question is who performs this rewriting. The traditional answer is a
+human expert, and for an important query in the hands of a seasoned
+engineer this remains effective. But it does not scale. Rewriting a
+single machine-generated query can require understanding hundreds of
+lines of SQL together with the schema and constraints behind them, and
+organizations accumulate such queries by the thousands. The automated
+answer, developed over four decades of research and practice, is the
+rewrite rule: a pattern that matches a fragment of a query and replaces
+it with an equivalent, presumably faster counterpart. Rule-based
+rewriting powers systems from Apache Calcite~\cite{begoli2018apache} to
+recent tools that discover rules automatically~\cite{wetune}, and where
+a rule applies, it works well. Its limitation is structural rather than
+incidental: a rule-based rewriter is exactly as capable as its rule set,
+and every rule must be anticipated, specified, and proven by someone in
+advance. Queries whose patterns no rule anticipates receive no help at
+all, and the machine-generated SQL now flooding data warehouses is an
+endless source of unanticipated patterns.
+
+Yet the rewrites themselves exist. Around any given query lies a vast
+space of semantically equivalent formulations, and rules chart only the
+few routes into that space that someone has already mapped. What has
+been missing is a way to explore the space itself. This dissertation
+argues that two developments make such exploration possible. Program
+synthesis offers systematic search: given a way to score candidates and
+check equivalence, it can traverse the space of SQL directly,
+discovering rewrites no one has captured as a rule. Large language
+models offer learned knowledge: trained on decades of accumulated code
+and discussion, they have absorbed how experienced engineers reshape
+queries, and can propose rewrites for exactly the complex, unfamiliar
+queries where enumeration falters.
+
+This dissertation develops techniques that use program synthesis and
+large language models to rewrite SQL beyond predefined rules,
+automatically discovering semantically equivalent and substantially
+faster alternatives for individual queries and, ultimately, for entire
+SQL pipelines.
+
+\section{Rewriting as Search}
+\label{sec:intro:search}
+
+Rewriting without rules begins with a change of perspective. Instead of
+asking which known transformations apply to a query, one can ask which
+of the query's equivalent formulations runs fastest, and search for it
+directly. Framed this way, query rewriting becomes a program synthesis
+problem, and in principle any better formulation is discoverable,
+whether or not anyone has thought to capture it as a rule. Two obstacles
+stand between this idea and a working system. The space of equivalent
+queries is unbounded, so a search that treats all candidates alike
+drowns before it finds anything useful. And every candidate the search
+does surface must be proven equivalent to the original, a problem that
+is undecidable in general and expensive even in restricted forms.
+
+SlabCity turns this idea into the first synthesis-based technique
+capable of whole-query optimization without any rewrite rules. Its
+central concept is the query dataflow, a semantic abstraction of how
+data moves through a query. Dataflows give the search direction: they
+induce a scoring function that organizes the space so that candidates
+likely to be both equivalent and efficient are enumerated early, letting
+the search restructure a query as a whole rather than patching isolated
+fragments. Candidates that survive are admitted through layered
+equivalence checking, in which inexpensive testing filters out the many
+incorrect candidates and formal verification confirms the few that
+remain, a spectrum of guarantees that Chapter~2 examines in detail.
+
+The lesson of SlabCity is that rules are not necessary. Rule-free
+rewriting is practical, and it discovers optimizations that rule-based
+systems structurally cannot reach, including rewrites that no
+composition of existing rules can express. But search has a ceiling of
+its own. As queries grow toward the size and intricacy of
+machine-generated BI workloads, the space expands faster than any
+structural scoring can tame, and the guidance the search needs stops
+looking like a scoring function and starts looking like experience.
+
+\section{Rewriting with Learned Knowledge}
+\label{sec:intro:knowledge}
+
+Experienced engineers do not optimize a complex query by enumerating its
+equivalent forms. They recognize it: this subquery recomputes what a
+window function could compute once, that chain of self-joins is really a
+single pass in disguise. Large language models, trained on decades of
+public code and technical discussion, have absorbed a great deal of this
+collective experience, and they offer what search lacks, namely
+knowledge of how queries tend to be reshaped by people who know what
+they are doing. What they do not offer is trust. A language model will
+confidently propose rewrites that are subtly inequivalent, rewrites that
+are equivalent but no faster, and rewrites whose cost in model queries
+exceeds the savings they deliver.
+
+GenRewrite is the first holistic system to make language models
+dependable for query rewriting, and its central idea is to let rules
+return in a new form. Whenever a rewrite succeeds, GenRewrite distills
+the insight behind it into a Natural Language Rewrite Rule, a
+human-readable strategy stored in a growing repository. These rules
+serve three roles at once: they guide the model when new queries
+arrive, they explain each suggested rewrite in terms a reviewer can
+check, and they carry optimization knowledge from one query to the
+next, so the system becomes more capable with every query it
+optimizes. When a suggested rewrite turns out to be incorrect, a
+counterexample-guided correction loop repairs its syntactic and
+semantic errors rather than discarding it, salvaging rewrites that
+naive prompting would lose.
+
+The rules that emerge are unlike the rules that came before. No one
+wrote them in advance, they are stated in language rather than in
+algebra, and they are applied with judgment rather than by pattern
+matching. With them, GenRewrite optimizes the complex analytic queries
+where both rule-based systems and synthesis-based search falter, and it
+surpasses direct prompting while spending fewer model calls. What it
+still shares with every rewriter before it is the unit of work: one
+query at a time.
+
+\section{From Queries to Pipelines}
+\label{sec:intro:pipelines}
+
+Modern analytics does not run one query at a time. It runs as
+pipelines, in which hundreds of transformations feed one another on a
+schedule, and this changes what optimization means. A query that is
+perfectly written in isolation may still compute results that no
+downstream consumer uses, duplicate work that a sibling transformation
+already performs, or refresh hourly when its inputs change daily. No
+single-query rewriter can see any of this, because the opportunities do
+not live inside any one query. They live in the dependencies between
+queries.
+
+DAGSmith is built on the observation that those dependencies are not
+merely execution constraints but optimization signals. Reading the
+pipeline graph, it locates the places where dependency structure
+indicates waste, uses a language model to propose refactorings that may
+span multiple transformations, and admits a proposal only after
+data-backed checking confirms that the pipeline's final outputs are
+unchanged. Because a pipeline rewrite's value depends on how results
+are stored and how often they are refreshed, DAGSmith weighs each
+accepted rewrite jointly with materialization and refresh decisions,
+using a learned cost model to select the combination that serves the
+pipeline as a whole. The result is a pipeline that runs on the same
+engine and the same orchestrator, produces the same outputs, and does
+substantially less work to produce them.
+
+DAGSmith completes the trajectory of this dissertation. Rewriting that
+began with a single query and no rules ends at the scope where analytics
+actually runs, with gains that no per-query technique, however strong,
+can deliver alone.
+
+\section{Contributions and Organization}
+\label{sec:intro:contributions}
+
+In summary, this dissertation makes the following contributions.
+
+Chapter~3 presents SlabCity, the first synthesis-based technique for
+whole-query SQL optimization that requires no rewrite rules. It
+introduces query dataflows and a dataflow-driven scoring function that
+make rule-free search practical, together with layered equivalence
+checking that combines testing with bounded and full formal
+verification. Evaluated on four workloads, including a newly curated
+benchmark of more than 1,000 real-life queries, SlabCity optimizes more
+queries than state-of-the-art rule-based rewriters, discovers rewrites
+that no composition of their rules can express, and produces rewrites
+that are often several times faster than the original queries.
+
+Chapter~4 presents GenRewrite, the first holistic system for query
+rewriting with large language models. It introduces Natural Language
+Rewrite Rules as a mechanism for guiding, explaining, and transferring
+rewriting knowledge, and a counterexample-guided correction loop that
+repairs inequivalent candidates instead of discarding them. On TPC-DS,
+GenRewrite improves 25 queries by a factor of two or more, 1.35 times
+more than LLM-driven baselines and 2.6 times more than LLM-enhanced
+rule-based systems, with consistent results on the Join Order Benchmark
+and on machine-generated query variants.
+
+Chapter~5 presents DAGSmith, which extends automatic rewriting from
+individual queries to dependency-structured SQL pipelines. It
+identifies pipeline dependencies as optimization signals, combines
+LLM-guided refactoring with data-backed equivalence checking, and
+jointly optimizes rewriting, materialization, and refresh frequency
+under a learned cost model. On a real-world open-source healthcare
+analytics pipeline of 255 transformations, DAGSmith reduces end-to-end
+elapsed time by 42.6\% and warehouse compute cost by 67.7\%, far
+exceeding both materialization-only tuning and state-of-the-art
+single-query rewriting.
+
+Beyond the systems themselves, this dissertation contributes reusable
+artifacts to the community, including the curated benchmark of
+real-life queries constructed for SlabCity's evaluation.
+% TODO: add artifact/code links (GitHub footnotes), matching the
+% style of the sample dissertations.
+
+The remainder of this dissertation is organized as follows.
+Chapter~2 provides background on the query rewriting problem, on
+rule-based rewriting and its limits, on the spectrum of techniques for
+establishing query equivalence, and on program synthesis and large
+language models as they are used in this work. Chapters~3 through~5
+present SlabCity, GenRewrite, and DAGSmith. Chapter~6 discusses
+directions for future work, and Chapter~7 concludes.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\begin{comment}
+
 \chapter{Introduction}
 \label{chap:intro}
 
@@ -114,3 +407,4 @@ LLM-guided rewriting with natural-language rewrite rules.
 \Cref{dag:chap} presents DAGSmith, which extends rewriting to full SQL
 pipeline DAGs. \Cref{chap:future} discusses directions for future
 work, and \cref{chap:conclusion} concludes.
+\end{comment}
