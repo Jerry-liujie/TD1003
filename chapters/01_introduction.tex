@@ -78,15 +78,14 @@ quality of the queries they could be running.
 % and the quality of the queries they could be running.
 
 One might hope that query optimizers close this gap, since choosing
-efficient execution strategies is exactly what they are for. But an
-optimizer operates within a boundary that is easy to overlook: it selects
-the best execution plan for the query it is given, not the best query its
-author could have written. Two semantically identical queries, phrased
-differently, can lead the same optimizer to plans whose running times
-differ by orders of magnitude. When the given phrasing is poor, the
-remedy must operate on the query itself. That remedy is query rewriting:
-transforming a query into a semantically equivalent form that the
-optimizer can turn into a faster plan.
+efficient execution strategies is exactly what they are for. But an optimizer operates within a boundary that is easy to overlook:
+it selects the best execution plan for the query it is given, not the
+best query its author could have written. Two formulations of the same
+query, though semantically equivalent, can lead the same optimizer to
+plans whose running times differ by orders of magnitude. When the
+formulation is poor, the remedy must change the formulation. That
+remedy is query rewriting: transforming a query into a semantically
+equivalent form that the optimizer can turn into a faster plan.
 
 The question is who performs this rewriting. The traditional answer is a
 human expert, and for an important query in the hands of a seasoned
@@ -156,10 +155,18 @@ The lesson of SlabCity is that rules are not necessary. Rule-free
 rewriting is practical, and it discovers optimizations that rule-based
 systems structurally cannot reach, including rewrites that no
 composition of existing rules can express. But search has a ceiling of
-its own. As queries grow toward the size and intricacy of
-machine-generated BI workloads, the space expands faster than any
-structural scoring can tame, and the guidance the search needs stops
-looking like a scoring function and starts looking like experience.
+its own, and it becomes visible as queries grow complex. The difficulty
+is twofold. A complex query decomposes into many constituent dataflows,
+and the number of ways to select and combine them into candidate
+rewrites grows combinatorially, exploding the search space. At the same
+time, the scoring function that steers the search is structural and
+therefore coarse-grained: among this enormous number of candidates,
+vast numbers receive similar scores, and the function can no longer
+separate the promising few from the rest. What the search lacks at this
+scale is not more candidates but semantic judgment about which rewrites
+are worth attempting, the kind of judgment human experts accumulate
+through experience.
+
 
 \section{Rewriting with Learned Knowledge}
 \label{sec:intro:knowledge}
@@ -171,24 +178,28 @@ single pass in disguise. Large language models, trained on decades of
 public code and technical discussion, have absorbed a great deal of this
 collective experience, and they offer what search lacks, namely
 knowledge of how queries tend to be reshaped by people who know what
-they are doing. What they do not offer is trust. A language model will
-confidently propose rewrites that are subtly inequivalent, rewrites that
-are equivalent but no faster, and rewrites whose cost in model queries
-exceeds the savings they deliver.
+they are doing. What they do not offer is trust. A language model will confidently
+propose rewrites that are subtly inequivalent, and rewrites that are
+equivalent but no faster; and because commercial models charge for
+every call, undisciplined use can spend more on the LLMs than the
+resulting speedups save.
 
 GenRewrite is the first holistic system to make language models
 dependable for query rewriting, and its central idea is to let rules
 return in a new form. Whenever a rewrite succeeds, GenRewrite distills
-the insight behind it into a Natural Language Rewrite Rule, a
-human-readable strategy stored in a growing repository. These rules
-serve three roles at once: they guide the model when new queries
-arrive, they explain each suggested rewrite in terms a reviewer can
-check, and they carry optimization knowledge from one query to the
-next, so the system becomes more capable with every query it
-optimizes. When a suggested rewrite turns out to be incorrect, a
-counterexample-guided correction loop repairs its syntactic and
-semantic errors rather than discarding it, salvaging rewrites that
-naive prompting would lose.
+the insight behind it into a Natural Language Rewrite Rule (NLR2), a
+human-readable strategy recorded together with the performance
+bottleneck it resolves, and adds it to a growing repository. When a new
+query arrives, GenRewrite inspects the query and its execution plan to
+identify the likely bottleneck, retrieves the NLR2s that resolved
+similar bottlenecks in earlier queries, and supplies them in the
+model's prompt as concrete strategies to attempt. The same rules
+explain each suggested rewrite in terms a human reviewer can check, and
+they carry optimization knowledge from one query to the next, so the
+system becomes more capable with every query it optimizes. When a
+suggested rewrite turns out to be incorrect, a counterexample-guided
+correction loop repairs its syntactic and semantic errors rather than
+discarding it, salvaging rewrites that naive prompting would lose.
 
 The rules that emerge are unlike the rules that came before. No one
 wrote them in advance, they are stated in language rather than in
