@@ -5,14 +5,15 @@
 \label{chap:background}
 
 This chapter provides the shared foundation for the rest of the
-dissertation: the query rewriting problem and its extension to SQL
-pipelines, the rule-based paradigm that has dominated automatic
-rewriting, the techniques available for establishing that two queries
-are equivalent, and the two tools this dissertation builds on, program
-synthesis and large language models. Readers familiar with these topics
-can skim this chapter and refer back to it as needed.
+dissertation: the query rewriting problem, SQL pipelines and the
+extension of rewriting to them, the rule-based paradigm that has
+dominated automatic rewriting, the techniques available for
+establishing that two queries are equivalent, and the two tools this
+dissertation builds on, program synthesis and large language models.
+Readers familiar with these topics can skim this chapter and refer
+back to it as needed.
 
-\section{Queries, Pipelines, and the Rewriting Problem}
+\section{The Query Rewriting Problem}
 \label{sec:bg:problem}
 
 Throughout this dissertation, a query $q$ is a SQL \texttt{SELECT}
@@ -20,59 +21,137 @@ statement over a database whose schema and integrity constraints are
 known. Two queries $q$ and $q'$ are \emph{semantically equivalent},
 written $q \equiv q'$, if they produce identical results on every
 database instance that satisfies those constraints. Identical is meant
-under SQL's bag semantics: the same rows with the same multiplicities,
-and, where the query specifies an ordering, in the same order. The
-constraints are part of the definition for a practical reason: many
-valuable rewrites are correct only because of them. A rewrite that
-drops a duplicate-eliminating step, for example, may be justified by a
-key constraint and incorrect without it.
+under SQL's bag semantics: the same rows with the same multiplicities
+(and, for queries whose results are explicitly ordered, in the same
+order). The constraints are part of the definition for a practical
+reason: many valuable rewrites are correct only because of them. A
+rewrite that drops a duplicate-eliminating step, for example, may be
+justified by a key constraint and incorrect without it.
 
 The \emph{query rewriting problem} is then: given $q$, find a query
 $q'$ such that $q' \equiv q$ and $q'$ executes at lower cost, where
-cost means wall-clock latency and, in cloud settings, the money charged
-for the computation. Rewriting is a source-to-source transformation: it
-consumes SQL and produces SQL, and its output is still handed to the
-database's optimizer. The two are complementary rather than competing.
-The optimizer searches among execution plans for the query text it is
-given; a rewriter searches among query texts, changing the starting
-point of the optimizer's search. This division also makes rewriting
-portable, since a rewritten query can benefit any engine without
-modifying that engine's internals.
+cost means wall-clock latency and, in cloud settings, the money
+charged for the computation.
 
-Not every query deserves this effort. Rewriting a query, by any of the
-techniques in this dissertation, costs something: search time,
-verification time, or calls to a paid model. The investment pays off
-for queries that are executed repeatedly, where a one-time improvement
-is harvested on every subsequent run. Such recurring,
-resource-intensive queries dominate production analytics workloads,
-and they are the setting this dissertation assumes throughout.
+To see where rewriting fits, consider how a database processes a
+query. The optimizer first translates the SQL statement into an
+\emph{execution plan}, a tree of physical operators such as scans,
+joins, and aggregations. Among the many plans that could implement
+the given query, it selects the one its internal cost estimates deem
+cheapest, and the engine then executes that plan. Most systems
+display the selected plan through commands such as \texttt{EXPLAIN},
+and the plan shows how the work is distributed across operators;
+Chapter~4 relies on this visibility, inspecting a query's plan to
+identify its performance bottleneck, the operators where most of the
+time is spent.
 
-The industrialized form of recurrence is the \emph{SQL pipeline}. In
-tools such as dbt~\cite{dbtWhatExactly}, an organization's
-transformation logic is decomposed into named units, each defined by a
-single \texttt{SELECT} statement that reads from source tables and
-from the outputs of other units. Declaring those references makes the
-dependencies explicit, so the pipeline forms a directed acyclic graph:
-nodes are SQL transformations, and an edge records that one
-transformation consumes another's output. An orchestrator re-executes
-the pipeline on a schedule, materializing each node's result as a
-table or view that downstream nodes, dashboards, and applications then
-read. The pipelines that result are large, routinely hundreds or
-thousands of nodes, and long-lived, evolving with the organization
-that maintains them.
+Optimizers are not limited to plan selection. Most also restructure
+the query itself to a degree, applying transformations such as
+predicate pushdown and subquery unnesting before and during plan
+search. But every transformation an engine applies, at the plan
+level or the SQL level, comes from a fixed repertoire that its
+developers anticipated, implemented, and shipped. When two
+equivalent queries differ in a way that lies outside this
+repertoire, the engine optimizes them to very different plans, and
+such pairs are common in practice: their running times on the same
+engine can differ by orders of magnitude, and every speedup reported
+in Chapters~3 through~5 comes, by construction, from a
+transformation the underlying engine did not perform on its own.
+Query rewriting addresses this gap from outside the engine: it
+transforms the SQL before the optimizer sees it, and its output is
+ordinary SQL handed to the optimizer like any other query, so
+rewriting complements the optimizer rather than replacing it, and
+its benefits carry to any engine. One might object that any missing
+transformation could simply be added to the engine as one more
+rule. That is precisely the rule-based paradigm, and
+Section~\ref{sec:bg:rules} examines both its successes and the
+structural limits that motivate this dissertation.
 
-Pipelines widen the rewriting problem in both scope and freedom. The
-object being rewritten is now the pipeline itself: individual
-transformations may be rewritten, but logic may also be moved across
-nodes, nodes may be split, merged, added, or removed, and decisions
-about what to materialize and how often to refresh become part of the
-optimization. Correctness widens correspondingly: what must be
-preserved is not each node's output but the pipeline's final outputs,
-the results that external consumers actually read. Internal nodes may
-change or disappear so long as the outputs at the boundary are
-unchanged, which enlarges the space of admissible rewrites far beyond
-what any single query offers. Chapter~5 develops this setting in
-detail.
+Solving the rewriting problem also requires judging cost, which is
+itself nontrivial. A query's cost can be judged in three ways: by
+executing the query and measuring, which is accurate but expensive;
+by asking the engine for an estimate, since the optimizer attaches
+its internal cost estimates to the plan it selects, and cloud
+warehouses likewise estimate the resources a query will consume
+before running it; or by building a dedicated \emph{cost model} that
+predicts cost from the query's structure and statistics about the
+data, possibly learned from past executions, as the learned cost
+model in Chapter~5 does. All three appear in this dissertation.
+
+Whichever technique performs it, rewriting has a price of its own:
+search time, verification time, or calls to a commercial language
+model. The investment pays off for queries that are executed
+repeatedly, where a one-time improvement is harvested on every
+subsequent run. Such recurring, resource-intensive queries dominate
+production analytics
+workloads~\cite{jindal2018selecting,dbtcasestudy1,dbtcasestudy2}, and
+they are the setting this dissertation assumes throughout.
+
+\section{SQL Pipelines}
+\label{sec:bg:pipelines}
+
+Recurrence at organizational scale takes the form of the \emph{SQL
+pipeline}. In tools such as dbt~\cite{dbtWhatExactly}, an
+organization's transformation logic is decomposed into SQL
+transformations (called \emph{models} in dbt), each defined by a
+single \texttt{SELECT} statement, and each transformation declares
+which source tables and which other transformations it reads from.
+These declarations make the dependencies explicit, so the pipeline
+forms a directed acyclic graph: nodes are SQL transformations, and an
+edge records that one transformation consumes another's output. An
+orchestrator re-executes the pipeline on a schedule, materializing
+each node's result as a table or view that downstream nodes,
+dashboards, and applications then read. The scale of these pipelines
+in production is substantial. Statistics shared by dbt indicate that
+five percent of dbt projects, more than a thousand of them, contain
+over five thousand models, and Siemens has reported operating more
+than 85{,}000 models across 800 dbt projects, with 2{,}500 jobs
+executing daily~\cite{dengsoe2023large}. Pipelines of this size are
+not written once; they evolve for years with the organizations that
+maintain them.
+
+Pipelines enlarge the rewriting problem. The object being rewritten
+is now the pipeline itself: individual transformations may be
+rewritten as before, but logic may also be moved across nodes, for
+example by inlining part of a producer into its consumers or pulling
+a predicate from a consumer into a producer; nodes may be split,
+merged, added, or removed; and decisions about what to materialize
+and how often to refresh become part of the optimization. What must
+be preserved also changes. Correctness no longer means preserving
+each node's output; it means preserving the pipeline's \emph{final
+outputs}, the results that external consumers actually read.
+Internal nodes may change or disappear so long as the outputs at the
+boundary are unchanged.
+
+In principle, pipeline rewriting reduces to query rewriting. Because
+every transformation is itself a \texttt{SELECT} statement, any
+final output of a pipeline can be unfolded into a single
+self-contained query: substitute each referenced transformation with
+its defining statement, and repeat until only source tables remain.
+In this sense a pipeline is, semantically, a collection of large
+queries, one per final output, and pipeline equivalence is exactly
+query equivalence applied to each of them. This reduction supplies
+the correctness criterion stated above. As a representation for
+optimization, however, the unfolded query discards precisely the
+structure that matters. First, it hides sharing: a transformation
+read by several outputs reappears as duplicated logic inside each
+unfolded query, so the central pipeline-level question, namely what
+to compute once, persist, and reuse across consumers, cannot even be
+posed within any single query. Second, it collapses time: a pipeline
+persists intermediate results across runs and refreshes different
+nodes at different frequencies, while a query describes one
+execution and has no notion of persistent intermediate state or of
+parts running on different schedules. Third, it fails at scale:
+unfolding a real project produces deeply nested SQL with tens or
+hundreds of layers, far beyond what today's optimizers, rewriters,
+or equivalence checkers can process, and since the engine optimizes
+each statement in isolation, materialization boundaries are walls
+its optimizer cannot see across in any case. The dependency graph is
+therefore not incidental packaging around one large query; it is the
+representation that keeps sharing, persistence, and refresh
+explicit, and those are exactly the dimensions in which
+pipeline-level optimization lives. Chapter~5 builds directly on this
+structure.
 
 \section{Rule-Based Query Rewriting}
 \label{sec:bg:rules}
@@ -82,32 +161,33 @@ has been the \emph{rewrite rule}: a syntactic pattern, a condition
 under which the transformation is safe, and a replacement. When a
 fragment of a query matches the pattern and satisfies the condition,
 the fragment is replaced. Classical rules include pushing filtering
-predicates closer to the data they filter, unnesting correlated
-subqueries into joins~\cite{levy1994query}, and eliminating redundant
-joins or duplicate-removal steps that constraints render unnecessary.
+predicates closer to the data they filter~\cite{levy1994query},
+unnesting nested subqueries into joins~\cite{kim1982optimizing}, and
+eliminating redundant joins or duplicate-removal steps that
+constraints render unnecessary.
 
 Rule-based rewriting entered database systems with
 Starburst~\cite{pirahesh1992extensible}, which made rewriting an
 extensible phase of query processing, and it remains the architecture
 of modern optimizers. Apache Calcite~\cite{begoli2018apache}, the
 open-source optimizer embedded in many data systems, ships with
-hundreds of rules and is the rule-based baseline used throughout this
-dissertation. The paradigm's known weaknesses have each drawn
+hundreds of rules. The paradigm's known weaknesses have each drawn
 research attention: because writing correct rules demands rare
 expertise, WeTune~\cite{wetune} discovers and verifies new rules
 automatically; because applying rules in the wrong order can miss
 improvements or degrade performance, LearnedRewrite~\cite{LR} learns
-which rules to apply and in what order using Monte Carlo tree search
-over a learned cost model.
+which rules to apply and in what order, guided by a cost model.
+Calcite and LearnedRewrite serve as rule-based points of comparison
+in the chapters that follow.
 
 These efforts strengthen the paradigm without changing its boundary.
-However a rule set is obtained, curated or discovered, well ordered or
-poorly ordered, a rule-based rewriter can express only the rewrites
-its rules encode. Each rule must be anticipated, specified, and proven
-before it helps its first query, and a query whose improvement lies
-outside the rule set receives nothing. The chapters that follow treat
-rule-based systems both as baselines to compare against and as the
-boundary to move beyond.
+However a rule set is obtained, curated or discovered, well ordered
+or poorly ordered, a rule-based rewriter can express only the
+rewrites its rules encode. Each rule must be anticipated, specified,
+and proven before it helps its first query, and a query whose
+improvement lies outside the rule set receives nothing. The chapters
+that follow treat rule-based systems both as baselines to compare
+against and as the boundary to move beyond.
 
 \section{Establishing Query Equivalence}
 \label{sec:bg:equivalence}
@@ -116,53 +196,55 @@ Every rewriting technique in this dissertation must answer the same
 question: is the candidate $q'$ really equivalent to $q$? For
 rule-based systems the question is settled once per rule, when the
 rule is proven. A system that generates rewrites freely must instead
-settle it once per candidate, which places equivalence checking on the
-critical path of rewriting itself. No general procedure exists for
-deciding SQL equivalence, and the fragments for which decision
-procedures do exist are expensive, so practical systems assemble their
-guarantees from techniques that trade coverage, cost, and strength of
-guarantee against one another.
-% TODO: add the standard citation for undecidability of query
-% equivalence (first-order/relational calculus result).
+settle it once per candidate, which makes equivalence checking part
+of the rewriting process itself. The question is also fundamentally
+hard: deciding the equivalence of relational queries is undecidable
+in general, a classical consequence of Trakhtenbrot's
+theorem~\cite{trakhtenbrot1950}, and deciding even restricted
+fragments is expensive. Practical systems therefore combine several
+techniques, trading coverage, cost, and strength of assurance
+against one another.
 
 \emph{Testing} executes both queries on concrete database instances
 and compares their results. A single mismatching instance is a
-\emph{counterexample} that definitively refutes equivalence, and
-counterexamples are productive artifacts: they can steer a search away
-from a mistaken region, or show a language model precisely how its
-suggestion fails. Agreement on all tested instances, however, proves
-nothing about untested ones, so testing serves as a fast, incomplete
-filter that eliminates most incorrect candidates cheaply.
+\emph{counterexample} that definitively refutes equivalence, and a
+counterexample is useful beyond refutation: it can steer a search
+away from a mistaken region, or show a language model precisely how
+its suggestion fails. Agreement on all tested instances, however,
+proves nothing about untested ones, so testing serves as a fast,
+incomplete filter that eliminates most incorrect candidates cheaply.
 
 \emph{Formal verification} constructs a proof. Bounded verification
-encodes both queries symbolically and proves them equivalent on all
-database instances up to a size bound, typically by discharging the
-obligation to an SMT solver; a proof at bound $k$ leaves open what
-happens beyond $k$, but in practice inequivalent query pairs almost
-always differ on small instances. Full verification aims at
-unconditional proofs, through provable-equivalence calculi and
-solver-backed provers~\cite{chu2017cosette,chu2018axiomatic,zhou2022spes}.
-Full verifiers provide the strongest guarantee and are the most
+proves two queries equivalent on all database instances up to a size
+bound, typically by encoding the check as constraints for an SMT
+solver; a proof at bound $k$ leaves open what happens beyond $k$,
+but inequivalent query pairs are overwhelmingly likely to differ
+already on small instances, an assumption borne out empirically in
+Chapter~3. Full verification aims at unconditional proofs, through
+algebraic reasoning and automated
+provers~\cite{chu2017cosette,chu2018axiomatic,zhou2022spes}. Full
+verifiers provide the strongest assurance and are the most
 restricted in the SQL they accept, which is why practical systems
 layer these techniques, spending cheap tests first and reserving
-expensive proofs for the survivors.
+expensive proofs for the few candidates that remain.
 
 At pipeline scale, formal proof is out of reach: a refactoring may
-touch dozens of interdependent transformations, and no verifier
-accepts the composition. \emph{Data-backed checking} takes the
-pragmatic point on the spectrum: execute the original and refactored
-pipelines on production-scale data and compare the materialized
-outputs that external consumers read. The guarantee is relative to the
-data tested rather than universal, but it is a guarantee about exactly
-the outputs the organization depends on, on exactly the data it runs.
+touch dozens of interdependent transformations, and existing
+verifiers support neither the SQL features nor the multi-statement
+scope involved. \emph{Data-backed checking} takes the pragmatic
+point on the spectrum: execute the original and refactored pipelines
+on production-scale data and compare the materialized outputs that
+external consumers read. The resulting assurance is relative to the
+data tested rather than universal, but it concerns exactly the
+outputs the organization depends on, on exactly the data it runs.
 
-The three systems in this dissertation each assemble their guarantee
+The three systems in this dissertation each assemble their assurance
 differently. SlabCity (Chapter~3) layers testing beneath bounded and
-full verification inside its search loop. GenRewrite (Chapter~4) uses
-testing to catch inequivalent suggestions and turns the resulting
-counterexamples into corrections. DAGSmith (Chapter~5) admits a
-pipeline refactoring only after data-backed checking confirms its
-final outputs.
+full verification inside its search loop. GenRewrite (Chapter~4)
+uses testing to catch inequivalent suggestions and turns the
+resulting counterexamples into corrections. DAGSmith (Chapter~5)
+admits a pipeline refactoring only after data-backed checking
+confirms its final outputs.
 
 \section{Program Synthesis and Large Language Models}
 \label{sec:bg:tools}
@@ -174,36 +256,37 @@ down in advance. This dissertation draws on two.
 program, within a defined space, that satisfies a specification.
 Query rewriting instantiates it naturally: the space is SQL, and the
 specification is the original query itself, since the synthesized
-program must be equivalent to it and faster. What makes synthesis hard
-is scale: the space of candidate programs grows explosively with
-program size, so practical synthesizers combine enumeration with
-aggressive pruning, discarding whole families of candidates at once,
-and with feedback loops such as counterexample-guided inductive
-synthesis, in which each failed candidate's counterexample sharpens
-the tests that future candidates must pass~\cite{solar2008program}.
-Synthesis has been applied to SQL chiefly to generate queries from
-input-output examples~\cite{wang2017synthesizing}; using it to
-optimize an existing query, where the specification is another query
-rather than examples, is the departure Chapter~3 makes.
+program must be equivalent to it and faster. What makes synthesis
+hard is scale: the space of candidate programs grows explosively
+with program size, so practical synthesizers combine enumeration
+with aggressive pruning, discarding whole families of candidates at
+once, and with feedback loops such as counterexample-guided
+inductive synthesis, in which each failed candidate's counterexample
+sharpens the tests that future candidates must
+pass~\cite{solar2008program}. Synthesis has been applied to SQL
+chiefly to generate queries from input-output
+examples~\cite{wang2017synthesizing}; using it to optimize an
+existing query, where the specification is another query rather than
+examples, is the step Chapter~3 takes.
 
 \emph{Large language models} are neural networks trained on vast
-corpora of text and code to predict continuations, a simple objective
-that at sufficient scale yields broad competence in understanding and
-generating programs, SQL included~\cite{zhao2023llm}. They are used
-through \emph{prompting}: a task description, optionally with examples,
-supplied as input text~\cite{googleprompt}. Their operational costs
-are measured in \emph{tokens}, the subword units in which they consume
-and produce text, and commercial models charge per
-token~\cite{openaitokens}, so the number and length of model calls is
-a first-class engineering concern. For rewriting, their promise is
-exactly the experience that rules cannot capture: trained on decades
-of public code and discussion, they recognize how experienced
-engineers reshape queries, including patterns no rule set anticipates.
-Their weakness is reliability. A model produces fluent, confident
-output with no guarantee of correctness, a failure mode commonly
-called hallucination, and it has no innate sense of whether a
-suggested rewrite is faster. Every use of language models in this
-dissertation is therefore disciplined by the machinery of
-Section~\ref{sec:bg:equivalence}: models propose, and independent
-checking disposes. How Chapters~4 and~5 build that discipline into
-practical systems is the subject of the chapters themselves.
+corpora of text and code to predict the next token, a simple
+objective that at sufficient scale yields broad competence in
+understanding and generating programs, SQL
+included~\cite{zhao2023llm}. They are used through \emph{prompting}:
+a task description, optionally with examples, supplied as input
+text~\cite{googleprompt}. Their operational costs are measured in
+\emph{tokens}, the subword units in which they consume and produce
+text, and commercial models charge per token~\cite{openaitokens},
+so the number and length of model calls is a first-class engineering
+concern. For rewriting, their promise is exactly the experience that
+rules cannot capture: trained on decades of public code and
+discussion, they recognize how experienced engineers reshape
+queries, including patterns no rule set anticipates. Their weakness
+is reliability. A model produces fluent, confident output with no
+guarantee of correctness, a failure mode commonly called
+hallucination, and it has no innate sense of whether a suggested
+rewrite is faster. Every use of language models in this dissertation
+is therefore paired with the checking machinery of
+Section~\ref{sec:bg:equivalence}: models propose candidates, and
+independent checking decides which survive.
