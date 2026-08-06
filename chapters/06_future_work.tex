@@ -1,34 +1,145 @@
 %===================================================================
-% Chapter 5: Future Work -- Phase-1 stub. Seeded from directions
-% mentioned across the three papers; expand and revise.
+% Chapter 6: Future Work
 %===================================================================
 \chapter{Future Work}
 \label{chap:future}
 
-% TODO: expand each direction into a full paragraph or section.
-This dissertation opens several directions for future research.
+The systems in this dissertation answer the question they were built
+for: SQL can be rewritten, correctly and profitably, beyond any fixed
+set of rules. The answer opens questions of its own. This chapter
+outlines four directions, in each case starting from something this
+dissertation already demonstrates and asking what lies one step
+further.
 
-\paragraph{From rewrite discovery to rule discovery.}
-The dataflow-guided synthesis framework of SlabCity could be applied
-to discovering reusable rewrite \emph{rules}, complementing systems
-such as WeTune~\cite{wetune}. Similarly, NLR2s distilled by GenRewrite
-form a growing, human-readable rule repository; studying how such
-repositories transfer across schemas, engines, and organizations is a
-natural next step.
+\section{From Rewrites to Rules and Shared Optimization Knowledge}
+\label{sec:fw:rules}
 
-\paragraph{Tighter integration with query optimizers.}
-% TODO: flesh out -- e.g., feeding rewriter signals into cost models,
-% or invoking higher-level rewriters selectively based on optimizer
-% confidence.
-Our systems currently operate as source-to-source preprocessors
-outside the database. Integrating them more tightly with the
-optimizer could reduce overhead and enable cooperative optimization.
+Rule-free rewriters and rule-based rewriters need not remain
+competitors: the former can supply the latter. Every rewrite this
+dissertation's systems produce is a verified, measured example of a
+transformation that existing rule sets lack, and such examples are
+precisely the raw material from which new rules can be distilled. Two
+concrete paths follow from Chapters~3 and~4. SlabCity's
+dataflow-guided synthesis can be pointed at rule discovery directly:
+a specific transformation found for one query can be generalized into
+a template pair with an associated condition, and verified once as a
+rule in the style of WeTune~\cite{wetune}. GenRewrite's repository
+suggests a complementary path: each NLR2 accumulates multiple
+verified query pairs over time, and aggregating those pairs makes it
+possible to extract the common structural transformation together
+with explicit preconditions, so that the resulting rule generalizes
+beyond the incidental syntax of any single example. A rule mined this
+way arrives with evidence: the queries it improved and the speedups
+it delivered. NLR2s add one more possibility that classical rules
+never had. Because they are stated in natural language and contain no
+schema or data from the workload that produced them, they can be
+shared across teams and organizations, raising the prospect of
+community repositories of optimization knowledge that grow the way
+open-source code does.
 
-\paragraph{Beyond performance: cost, correctness, and maintainability.}
-% TODO: flesh out -- pipeline-level objectives beyond latency, e.g.,
-% cloud cost budgets, freshness constraints, and developer-friendly
-% refactorings, extending the DAGSmith direction.
-DAGSmith suggests that pipeline-level rewriting must balance latency,
-warehouse cost, refresh frequency, and the readability of the
-resulting SQL project; formalizing these trade-offs is an open
-problem.
+\section{Optimizing AI-Generated SQL and Learning to Rewrite}
+\label{sec:fw:ai-sql}
+
+The workload is changing under this field's feet. An ever larger
+share of SQL is produced by AI, through assistants and natural
+language interfaces, and AI-generated SQL fails differently from
+human SQL: it is written to capture intent, by a generator that
+cannot see the data's statistics or the engine's cost behavior, so
+its inefficiencies are systematic and repeated at scale. Three
+research efforts follow, in increasing ambition.
+
+The first is to understand the new workload. Classical benchmarks
+encode human idioms, so the field lacks a benchmark of AI-generated
+SQL; the generated query variants in Chapter~4's evaluation are a
+seed, and expanding them into a curated benchmark, paired with a
+taxonomy of the inefficiency patterns generators actually produce,
+would give rewriting research its proper target and quantify how far
+techniques tuned on human queries carry over.
+
+The second is to make rewriting knowledge flow backward into
+generation. The NLR2 repository is exactly the knowledge a generator
+lacks: supplying relevant NLR2s at generation time, or screening
+candidate generations against known anti-patterns before they enter
+a codebase, would prevent inefficient SQL rather than cure it.
+Prevention will not eliminate the cure, since cost depends on data
+and engine characteristics that generation time cannot see, but
+measuring how much of the rewriting gap prevention closes is itself
+an open question.
+
+The third is to learn the rewriter. The most capable AI models
+today are trained by reinforcement learning on tasks with
+automatically checkable success, and query rewriting is such a task:
+equivalence can be checked and speedup can be measured, so this
+dissertation's checking machinery is, from a training perspective, a
+reward function. The verified rewrite pairs GenRewrite accumulates
+are training data that no one else has. A concrete program starts
+with supervised fine-tuning on those pairs, continues with
+reinforcement learning in which a candidate rewrite is rewarded only
+when the tester and verifier accept it and the measured or estimated
+cost improves, and aims at a small, specialized rewriting model that
+has internalized what GenRewrite currently retrieves through
+prompting. Such a model would be cheaper per query than a
+general-purpose model, deployable privately beside the warehouse,
+and, unlike a rule set, would keep improving as its own accepted
+rewrites become further training signal.
+
+\section{The Continuously Optimized Pipeline}
+\label{sec:fw:pipelines}
+
+Chapter~5 optimizes a pipeline as it exists at one moment, but
+pipelines evolve for years, and evolution interacts with
+optimization in ways a one-time pass cannot address. The core
+technical problem is dependence tracking. A refactoring that merges
+models or moves logic across nodes is correct relative to the
+producer definitions it read at optimization time; a later edit to
+one of those definitions can silently invalidate it. A continuous
+optimizer must therefore record, for every accepted rewrite, the
+definitions it depends on, detect when an edit touches them, and
+re-verify only the affected subgraph, using the same data-backed
+checks as the original decision. The workflow question is equally
+concrete: the natural insertion point is code review, where the
+optimizer analyzes a proposed change to the pipeline, re-validates
+the optimizations it affects, and proposes new refactorings as
+ordinary review comments with diffs attached, so optimization
+becomes part of how the pipeline is developed rather than a
+maintenance event. Beyond correctness, a continuous optimizer must
+manage change itself: refresh frequencies and data volumes drift, so
+materialization and scheduling decisions that were right last
+quarter decay, and the system needs stability rules that re-tune
+when the projected savings justify the churn rather than
+oscillating with every fluctuation. Solving these problems would
+turn DAGSmith from a tool one runs into a steward that accompanies
+a pipeline through its life, which is the form in which pipeline
+optimization would actually be adopted.
+
+\section{Query Optimization as a Cloud Service}
+\label{sec:fw:service}
+
+The economics that motivate this dissertation point at a delivery
+model for it. In cloud warehouses, optimization converts directly
+into money saved, which makes rewriting natural to offer as a
+service that watches an organization's recurring workload, proposes
+verified rewrites and pipeline refactorings, and is judged, perhaps
+even priced, by the compute it saves. Turning that sketch into
+reality raises research questions rather than merely engineering
+ones. The first is attribution: charging for savings requires
+measuring them credibly, and since costs shift with data growth and
+workload drift, the service needs counterfactual estimates of what
+the unoptimized workload would have cost, validated by controlled
+comparisons on recurring runs. The second is trust and autonomy:
+organizations will not hand write access to their pipelines to an
+external system, so the service must span a spectrum from advisory
+mode to auto-apply with verified rollback, with the equivalence
+machinery of this dissertation serving as the guardrail that makes
+higher autonomy defensible. The third is what multi-tenancy does to
+knowledge: a service that optimizes many customers accumulates
+NLR2-style knowledge across all of them, and because NLR2s carry no
+customer schema or data, each tenant's successful rewrites can
+safely make every other tenant's optimization better, giving the
+service a compounding advantage no single-tenant tool can match, and
+giving a new customer useful optimization from day one. There is
+also an ecosystem question worth naming: the warehouse vendor's
+revenue grows with compute consumed while the service's value grows
+with compute saved, and where optimization ultimately lives, inside
+the warehouse, beside it, or independent of it, will be decided by
+that tension.

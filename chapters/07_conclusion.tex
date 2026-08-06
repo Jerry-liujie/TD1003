@@ -1,26 +1,36 @@
 %===================================================================
-% Chapter 6: Conclusion -- Phase-1 stub; revise freely.
+% Chapter 7: Conclusion
 %===================================================================
 \chapter{Conclusion}
 \label{chap:conclusion}
 
-% TODO: expand into a proper concluding chapter (1-3 pages).
-This dissertation studied how program synthesis and large language
-models can rewrite SQL beyond existing rule-based optimizers,
-progressing from single-query transformations to full SQL pipeline
-refactoring.
+For four decades, automatic query rewriting has meant applying rules
+that someone wrote down in advance. This dissertation asked whether
+that boundary is necessary, and showed that it is not: semantically
+equivalent, substantially faster SQL can be discovered rather than
+pattern-matched, for individual queries and for the pipelines in
+which modern analytics runs.
 
-SlabCity demonstrated that whole-query optimization is possible
-without predefined rewrite rules, by defining dataflows for SQL
-queries and using them to guide an efficient synthesis search.
-GenRewrite showed that LLMs, anchored by natural-language rewrite
-rules, can achieve broader coverage and larger speedups than both
-rule-based systems and naive prompting, while accumulating reusable
-rewriting knowledge over time. DAGSmith lifted these ideas to
-dependency-rich SQL pipelines, jointly reasoning about refactoring,
-materialization, and scheduling to deliver large end-to-end cost and
-latency reductions on realistic dbt projects.
+The path ran along two movements. The source of rewrites moved from
+systematic search to learned knowledge: SlabCity established that
+whole-query rewriting needs no rules at all, and GenRewrite showed
+that language models, properly disciplined, optimize the complex
+queries where search falters and grow more capable with every query
+they optimize. The object of rewriting moved from the single query
+to the pipeline: DAGSmith treated dependency structure as
+optimization signal and reached improvements that no
+one-query-at-a-time technique can see. What never changed is the
+discipline underneath. Every candidate, from whatever source, earned
+its place by passing equivalence checking matched to its setting.
+Removing the rules did not remove the guarantees; it moved them from
+the transformation to the result.
 
-Together, these systems trace a path from synthesis to LLMs for SQL
-query rewriting beyond rules, delivering substantial performance gains
-from individual queries to large, dependency-rich SQL pipelines.
+The trends that motivated this work have only strengthened. SQL is
+written increasingly by AI, accumulates increasingly into pipelines,
+and runs on infrastructure that bills inefficiency by the second,
+so the space of queries that no hand-written rule set will
+anticipate keeps growing. The central lesson of this dissertation is
+that this space is not a wilderness: it can be searched, it can be
+learned, and it can be verified. The rules we can write down were
+never the boundary of what optimization can reach; they were only
+where it began.
