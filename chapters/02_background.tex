@@ -156,38 +156,56 @@ structure.
 \section{Rule-Based Query Rewriting}
 \label{sec:bg:rules}
 
-For four decades, the dominant approach to automatic query rewriting
-has been the \emph{rewrite rule}: a syntactic pattern, a condition
-under which the transformation is safe, and a replacement. When a
-fragment of a query matches the pattern and satisfies the condition,
-the fragment is replaced. Classical rules include pushing filtering
-predicates closer to the data they filter~\cite{levy1994query},
-unnesting nested subqueries into joins~\cite{kim1982optimizing}, and
+Section~\ref{sec:bg:problem} ended at the rule-based paradigm; this
+section examines it. A rewrite rule consists of a syntactic pattern,
+a condition under which the transformation is safe, and a
+replacement. Classical rules include pushing filtering predicates
+closer to the data they filter~\cite{levy1994query}, unnesting
+nested subqueries into joins~\cite{kim1982optimizing}, and
 eliminating redundant joins or duplicate-removal steps that
-constraints render unnecessary.
+constraints render unnecessary. A rule engine applies its rules to
+the query's relational algebra representation: it walks the operator
+tree, finds fragments that match a rule's pattern, checks the rule's
+condition against the schema and constraints, and performs the
+replacement, either in a dedicated rewrite phase run before plan
+selection, the architecture that Starburst
+introduced~\cite{pirahesh1992extensible}, or interleaved with
+cost-based plan search so that a rewrite is kept only when it leads
+to a cheaper plan. Apache Calcite~\cite{begoli2018apache}, the
+open-source optimizer embedded in many data systems, is the
+contemporary embodiment: a manually curated rule set, accumulated
+and refined over years, applied through exactly this machinery.
 
-Rule-based rewriting entered database systems with
-Starburst~\cite{pirahesh1992extensible}, which made rewriting an
-extensible phase of query processing, and it remains the architecture
-of modern optimizers. Apache Calcite~\cite{begoli2018apache}, the
-open-source optimizer embedded in many data systems, ships with
-hundreds of rules. The paradigm's known weaknesses have each drawn
-research attention: because writing correct rules demands rare
-expertise, WeTune~\cite{wetune} discovers and verifies new rules
-automatically; because applying rules in the wrong order can miss
-improvements or degrade performance, LearnedRewrite~\cite{LR} learns
-which rules to apply and in what order, guided by a cost model.
-Calcite and LearnedRewrite serve as rule-based points of comparison
-in the chapters that follow.
+Rules have earned their dominance: every major database runs a
+rewrite phase over every query it executes. WeTune~\cite{wetune}
+measured how far such rule sets reach by studying 50 real-world
+rewrite requests drawn from popular open-source applications. The
+rules of Microsoft SQL Server, accumulated over decades of
+commercial development, resolved nearly half of them, a testament to
+how much value rules deliver in practice. The same study also
+exposed the paradigm's limits: Calcite's rules covered only 4 of the
+50 requests, and WeTune's automatic enumeration discovered more than
+a thousand promising rules absent from existing systems, resolving
+38 of the requests with them. Even the most mature rule sets, then,
+are far from complete.
 
-These efforts strengthen the paradigm without changing its boundary.
-However a rule set is obtained, curated or discovered, well ordered
-or poorly ordered, a rule-based rewriter can express only the
-rewrites its rules encode. Each rule must be anticipated, specified,
-and proven before it helps its first query, and a query whose
-improvement lies outside the rule set receives nothing. The chapters
-that follow treat rule-based systems both as baselines to compare
-against and as the boundary to move beyond.
+The obvious response, adding more rules, is harder than it sounds,
+and a deeper reason is that rules interact. A rule's benefit is not
+a fixed property of the rule itself: applying one rule changes which
+other rules match, so what a rule contributes depends on which rules
+surround it and in what order they fire, and the same rule can
+unlock a large improvement in one sequence while degrading
+performance in another. This has two consequences. Even with a fixed
+rule set, deciding which rules to apply and in what order is a
+search problem in its own right, which LearnedRewrite~\cite{LR}
+addresses by learning application orders under the guidance of a
+cost model. And every extension compounds the problem: a new rule
+must be proven safe on its own, which already demands rare
+expertise, yet its value can only be judged in combination with the
+rules already present, whose behavior it in turn perturbs. Rule sets
+therefore grow slowly while coverage gaps persist. The chapters that
+follow use Calcite and LearnedRewrite as rule-based baselines, and
+take the other route: producing rewrites without rules at all.
 
 \section{Establishing Query Equivalence}
 \label{sec:bg:equivalence}
@@ -198,67 +216,115 @@ rule-based systems the question is settled once per rule, when the
 rule is proven. A system that generates rewrites freely must instead
 settle it once per candidate, which makes equivalence checking part
 of the rewriting process itself. The question is also fundamentally
-hard: deciding the equivalence of relational queries is undecidable
-in general, a classical consequence of Trakhtenbrot's
-theorem~\cite{trakhtenbrot1950}, and deciding even restricted
-fragments is expensive. Practical systems therefore combine several
-techniques, trading coverage, cost, and strength of assurance
-against one another.
+hard. For queries expressible in the relational calculus, the formal
+core of SQL, equivalence over finite databases is undecidable: by
+Trakhtenbrot's theorem, no algorithm can decide whether a
+first-order sentence is satisfiable on some finite database, and
+query equivalence inherits this
+impossibility~\cite{trakhtenbrot1950,abiteboul1995foundations}. The
+difficulty persists under severe restriction: even for conjunctive
+queries, plain select-project-join queries without negation or
+aggregation, equivalence is NP-complete~\cite{chandra1977optimal}.
+Practical systems therefore combine several techniques, trading
+coverage, cost, and strength of assurance against one another. The
+rest of this section describes each technique together with what it
+can realistically deliver today.
 
 \emph{Testing} executes both queries on concrete database instances
 and compares their results. A single mismatching instance is a
 \emph{counterexample} that definitively refutes equivalence, and a
 counterexample is useful beyond refutation: it can steer a search
 away from a mistaken region, or show a language model precisely how
-its suggestion fails. Agreement on all tested instances, however,
-proves nothing about untested ones, so testing serves as a fast,
-incomplete filter that eliminates most incorrect candidates cheaply.
+its suggestion fails. Agreement on all tested instances proves
+nothing about untested ones, so testing is an incomplete filter, but
+it is also the most general tier: it applies to essentially any SQL
+the engine can execute, including features far beyond what any
+verifier supports. Its effectiveness depends on the test data.
+Random data rarely exposes subtle differences, and systematic test
+generation for expressive SQL had received little attention;
+Chapter~3 develops a tester that analyzes the two queries' filter
+conditions, groupings, and duplicate handling to construct small
+databases likely to expose a difference, and Chapter~4 adopts the
+same tester.
 
-\emph{Formal verification} constructs a proof. Bounded verification
-proves two queries equivalent on all database instances up to a size
-bound, typically by encoding the check as constraints for an SMT
-solver; a proof at bound $k$ leaves open what happens beyond $k$,
-but inequivalent query pairs are overwhelmingly likely to differ
-already on small instances, an assumption borne out empirically in
-Chapter~3. Full verification aims at unconditional proofs, through
-algebraic reasoning and automated
-provers~\cite{chu2017cosette,chu2018axiomatic,zhou2022spes}. Full
-verifiers provide the strongest assurance and are the most
-restricted in the SQL they accept, which is why practical systems
-layer these techniques, spending cheap tests first and reserving
-expensive proofs for the few candidates that remain.
+\emph{Bounded verification} proves two queries equivalent on all
+database instances up to a size bound, typically by encoding the
+check as constraints for an SMT solver; the guarantee is exhaustive
+below the bound and silent above it. This dissertation uses the
+bounded verifiers of Cosette~\cite{chu2017cosette,wang2018speeding},
+with the bound in Chapter~3 set to two rows per input table and
+cell values left unconstrained. More recently,
+VeriEQL~\cite{he2024verieql} has pushed this tier to the most
+expressive SQL supported by any equivalence checker to date,
+handling features such as sorting, \texttt{CASE} expressions, and
+rich integrity constraints, and generating counterexamples that
+have exposed real bugs in MySQL and Calcite. Bounded assurance is
+meaningful in practice because inequivalent query pairs are
+overwhelmingly likely to differ already on small instances, an
+assumption borne out empirically in Chapter~3.
 
-At pipeline scale, formal proof is out of reach: a refactoring may
-touch dozens of interdependent transformations, and existing
-verifiers support neither the SQL features nor the multi-statement
-scope involved. \emph{Data-backed checking} takes the pragmatic
-point on the spectrum: execute the original and refactored pipelines
-on production-scale data and compare the materialized outputs that
-external consumers read. The resulting assurance is relative to the
-data tested rather than universal, but it concerns exactly the
-outputs the organization depends on, on exactly the data it runs.
+\emph{Full verification} aims at unconditional proofs. A line of
+provers has steadily expanded what is provable, from
+Cosette~\cite{chu2017cosette} through algebraic
+approaches~\cite{chu2018axiomatic} and symbolic
+reasoning~\cite{zhou2022spes} to SQLSolver~\cite{ding2023proving},
+which proves 346 of 359 equivalent query pairs derived from the
+rewrite rules of Calcite and Spark SQL. That result calibrates
+expectations in both directions. Rule-sized, well-structured query
+pairs are now largely within reach of automated proof; at the same
+time, full analytic queries, with window functions, deeply nested
+correlated subqueries, and vendor-specific constructs, routinely
+fall outside the supported fragments, and on such inputs a verifier
+returns unknown rather than a verdict. This is why practical
+systems layer the tiers, spending cheap tests first and reserving
+expensive proofs for the candidates that survive and that the
+verifier can accept.
 
-The three systems in this dissertation each assemble their assurance
-differently. SlabCity (Chapter~3) layers testing beneath bounded and
-full verification inside its search loop. GenRewrite (Chapter~4)
-uses testing to catch inequivalent suggestions and turns the
-resulting counterexamples into corrections. DAGSmith (Chapter~5)
-admits a pipeline refactoring only after data-backed checking
-confirms its final outputs.
+At pipeline scale, formal proof is out of reach entirely: a
+refactoring may touch dozens of interdependent transformations, and
+existing verifiers support neither the SQL features nor the
+multi-statement scope involved. \emph{Data-backed checking} takes
+the pragmatic point on the spectrum: execute the original and
+refactored pipelines on production-scale data and compare the
+materialized outputs that external consumers read. The resulting
+assurance is relative to the data tested rather than universal, but
+it concerns exactly the outputs the organization depends on, on
+exactly the data it runs.
+
+The three systems in this dissertation each assemble their
+assurance from these tiers. SlabCity (Chapter~3) layers testing
+beneath bounded and full verification inside its search loop.
+GenRewrite (Chapter~4) attempts full verification first; because
+the complex analytic queries it targets often come back unknown, it
+falls back to testing, which in that setting is the more practical
+instrument, and it turns the counterexamples testing produces into
+corrections. DAGSmith (Chapter~5) admits a pipeline refactoring
+only after data-backed checking confirms its final outputs.
 
 \section{Program Synthesis and Large Language Models}
 \label{sec:bg:tools}
 
 Moving beyond rules requires a source of rewrites that no one wrote
-down in advance. This dissertation draws on two.
+down in advance. This dissertation draws on two, and both have
+earned their place.
 
 \emph{Program synthesis} is the task of automatically finding a
-program, within a defined space, that satisfies a specification.
-Query rewriting instantiates it naturally: the space is SQL, and the
-specification is the original query itself, since the synthesized
-program must be equivalent to it and faster. What makes synthesis
-hard is scale: the space of candidate programs grows explosively
-with program size, so practical synthesizers combine enumeration
+program, within a defined space, that satisfies a specification. It
+is a mature field with a real-world track record: synthesis ships
+inside mainstream products, most famously FlashFill, which
+synthesizes spreadsheet transformations from a few examples within
+Microsoft Excel~\cite{gulwani2011automating}, and its algorithmic
+toolkit is well developed~\cite{gulwani2017program}. Its defining
+strength for our purposes is systematic coverage with correctness
+built in: a synthesizer explores its space exhaustively up to
+resource limits, misses nothing that the space can express, and
+pairs naturally with the checking of
+Section~\ref{sec:bg:equivalence}, since every candidate it emits can
+be tested and verified. Query rewriting instantiates synthesis
+naturally: the space is SQL, and the specification is the original
+query itself, since the synthesized program must be equivalent to it
+and faster. The central challenge is scale, as the candidate space
+grows explosively with program size; practical synthesizers respond
 with aggressive pruning, discarding whole families of candidates at
 once, and with feedback loops such as counterexample-guided
 inductive synthesis, in which each failed candidate's counterexample
@@ -266,27 +332,46 @@ sharpens the tests that future candidates must
 pass~\cite{solar2008program}. Synthesis has been applied to SQL
 chiefly to generate queries from input-output
 examples~\cite{wang2017synthesizing}; using it to optimize an
-existing query, where the specification is another query rather than
-examples, is the step Chapter~3 takes.
+existing query is the step Chapter~3 takes.
 
 \emph{Large language models} are neural networks trained on vast
 corpora of text and code to predict the next token, a simple
 objective that at sufficient scale yields broad competence in
-understanding and generating programs, SQL
-included~\cite{zhao2023llm}. They are used through \emph{prompting}:
-a task description, optionally with examples, supplied as input
-text~\cite{googleprompt}. Their operational costs are measured in
-\emph{tokens}, the subword units in which they consume and produce
-text, and commercial models charge per token~\cite{openaitokens},
-so the number and length of model calls is a first-class engineering
-concern. For rewriting, their promise is exactly the experience that
-rules cannot capture: trained on decades of public code and
-discussion, they recognize how experienced engineers reshape
-queries, including patterns no rule set anticipates. Their weakness
-is reliability. A model produces fluent, confident output with no
-guarantee of correctness, a failure mode commonly called
-hallucination, and it has no innate sense of whether a suggested
-rewrite is faster. Every use of language models in this dissertation
-is therefore paired with the checking machinery of
-Section~\ref{sec:bg:equivalence}: models propose candidates, and
-independent checking decides which survive.
+understanding and generating programs~\cite{zhao2023llm}. Their rise
+has been the defining development of recent software practice, and
+their fit for SQL is specific, not incidental. Trained on decades of
+public code, documentation, and technical discussion, they carry the
+accumulated experience of how practitioners write and reshape
+queries across dialects, they operate directly on the messy,
+sprawling SQL of real applications that formal tools cannot even
+parse, and they are as fluent in natural language as in code, able
+to explain a transformation as readily as perform it, an ability
+Chapter~4 turns into a mechanism. They are used through
+\emph{prompting}, a task description supplied as input
+text~\cite{googleprompt}, with costs metered in
+\emph{tokens}~\cite{openaitokens}, so the number and length of model
+calls is an engineering concern. Their limitation is equally clear:
+a model's output is fluent and confident but carries no guarantee of
+correctness, a failure mode commonly called hallucination, and a
+model has no innate sense of whether a rewrite is faster. Neither
+weakness is disqualifying. Both are managed by construction in this
+dissertation, which pairs every model suggestion with the
+independent checking of Section~\ref{sec:bg:equivalence} and with
+measured performance evaluation.
+
+There is a further reason these tools belong in this dissertation:
+they are reshaping what there is to optimize. A growing share of SQL
+is now written by language models themselves, through AI-assisted
+development and natural language interfaces to
+data~\cite{dbt2025state}, and that share is rising. This changes the
+optimization problem structurally. A model generates a query to
+capture intent, with no visibility into the data's statistics, the
+engine's characteristics, or the cost of its syntactic choices, so
+the inefficiencies of generated SQL are systematic rather than
+accidental, and they are produced at machine speed, far beyond what
+manual tuning can absorb. The plausible future is a toolchain in
+which generation and optimization are separate passes: models write
+SQL that captures intent, and automatic rewriting, disciplined by
+verification, makes that SQL efficient, with the knowledge distilled
+from successful rewrites flowing back to improve generation itself.
+This dissertation builds that second pass.
