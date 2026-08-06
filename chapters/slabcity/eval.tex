@@ -7,33 +7,23 @@
 
 \begin{figure*}[!t]
 \centering
-\begin{minipage}{.24\linewidth}
+% NOTE (dissertation): re-laid out from the paper's 1x4 strip to a 2x2 grid.
+\begin{minipage}[t]{.48\linewidth}\centering
 \includegraphics[width=\linewidth]{chapters/slabcity/figs/coverage_LeetCode_time.pdf}
-\vspace{-22pt}
-\caption*{\small (a) Coverage {(\# of queries)}.}
+\caption*{\small (a) Coverage (\# of queries).}
 \label{slab:fig:leetcode-coverage}
-\end{minipage}
-\hfill
-\begin{minipage}{.75\linewidth}
-\begin{minipage}{.32\linewidth}
+\end{minipage}\hfill
+\begin{minipage}[t]{.48\linewidth}\centering
 \includegraphics[width=\linewidth]{chapters/slabcity/figs/time_LeetCode_100K.pdf}
-%\caption{On 100K-sized DB.}
-\end{minipage}
-\hfill 
-\begin{minipage}{.32\linewidth}
+\end{minipage}\\[8pt]
+\begin{minipage}[t]{.48\linewidth}\centering
 \includegraphics[width=\linewidth]{chapters/slabcity/figs/time_LeetCode_1M.pdf}
-%\caption{On 1M-sized DB.}
-\end{minipage}
-\hfill
-\begin{minipage}{.32\linewidth}
+\end{minipage}\hfill
+\begin{minipage}[t]{.48\linewidth}\centering
 \includegraphics[width=\linewidth]{chapters/slabcity/figs/time_LeetCode_10M.pdf}
-%\caption{On 10M-sized DB.}
 \end{minipage}
-\vspace{-10pt}
-\caption*{\small (b) Latency reduction: left is on 100K, middle is 1M, and right is 10M. ``GM'' means geometric mean.}
+\caption*{\small (b) Latency reduction: top right is on 100K, bottom left is on 1M, and bottom right is on 10M. ``GM'' means geometric mean.}
 \label{slab:fig:leetcode-reduction-latency}
-\end{minipage}
-\vspace{-10pt}
 \caption{\barzanrev{LeetCode results across all data sizes with uniform distribution.}}
 \label{slab:fig:leetcode-results}
 \end{figure*}
@@ -43,36 +33,25 @@
 
 \begin{figure*}[!t]
 \centering
-\begin{minipage}{.24\linewidth}
+% NOTE (dissertation): re-laid out from the paper's 1x4 strip to a 2x2 grid.
+\begin{minipage}[t]{.48\linewidth}\centering
 \includegraphics[width=\linewidth]{chapters/slabcity/figs/coverage_Calcite_time.pdf}
-\vspace{-22pt}
-\caption*{\small (a) Coverage {(\# of queries)}.}
+\caption*{\small (a) Coverage (\# of queries).}
 \label{slab:fig:calcite-coverage}
-\end{minipage}
-\hfill
-\begin{minipage}{.75\linewidth}
-\begin{minipage}{.32\linewidth}
+\end{minipage}\hfill
+\begin{minipage}[t]{.48\linewidth}\centering
 \includegraphics[width=\linewidth]{chapters/slabcity/figs/time_Calcite_250K.pdf}
-%\caption{On 100K-sized DB.}
-\end{minipage}
-\hfill 
-\begin{minipage}{.32\linewidth}
+\end{minipage}\\[8pt]
+\begin{minipage}[t]{.48\linewidth}\centering
 \includegraphics[width=\linewidth]{chapters/slabcity/figs/time_Calcite_1M.pdf}
-%\caption{On 1M-sized DB.}
-\end{minipage}
-\hfill
-\begin{minipage}{.32\linewidth}
+\end{minipage}\hfill
+\begin{minipage}[t]{.48\linewidth}\centering
 \includegraphics[width=\linewidth]{chapters/slabcity/figs/time_Calcite_4M.pdf}
-%\caption{On 10M-sized DB.}
 \end{minipage}
-\vspace{-10pt}
-\caption*{\small (b) Latency reduction: left is on 250K, middle is 1M, right is 4M. ``GM'' means geometric mean.}
+\caption*{\small (b) Latency reduction: top right is on 250K, bottom left is on 1M, and bottom right is on 4M. ``GM'' means geometric mean.}
 \label{slab:fig:calcite-reduction-latency}
-\end{minipage}
-\vspace{-10pt}
 \caption{\barzanrev{Calcite results across all data sizes with uniform distribution.}}
 \label{slab:fig:calcite-results}
-\vspace{-5pt}
 \end{figure*}
 
 
@@ -380,8 +359,8 @@ As we used 10 hours as the latency for the timed-out input query in both cases, 
 \vspace{-8pt}
 \centering
 \setlength{\tabcolsep}{3pt}
-\def\arraystretch{1.2}
-\begin{tabular}{  R{120pt} | r  r   }
+\def\arraystretch{1.5}
+\begin{tabular}{  R{180pt} | r  r   }
 \toprule
 \% of time spent on 
 & LeetCode
@@ -498,12 +477,12 @@ $\wetune$
 
 
 
-\begin{table*}[!t]
-\begin{minipage}{.42\linewidth}
+\begin{table}[!t]
+\centering
 \footnotesize
 \centering
-\setlength{\tabcolsep}{2pt}
-\def\arraystretch{1.1}
+\setlength{\tabcolsep}{6pt}
+\def\arraystretch{1.5}
 \caption{\small Running time statistics to generate rewrites (in seconds).For $\toolname$, we report the time when an output query (synthesized using 5-second timeout) is found.}
 \vspace{-5pt}
 \begin{tabular}{  c | r r | r r  }
@@ -540,12 +519,12 @@ $\wetune$
 \end{tabular}
 
 \label{slab:tab:running-time-stats}
-\end{minipage}
-\vspace{15pt}
-\hspace{20pt}
+\end{table}
+
+\begin{table}[!t]
 % 
 %
-\begin{minipage}{.52\linewidth}
+\centering
 \footnotesize
 \centering
 \setlength{\tabcolsep}{2pt}
@@ -581,9 +560,7 @@ w/ exact latencies
 \end{tabular}
 
 \label{slab:tab:exact-latencies}
-\end{minipage}
-\vspace{-20pt}
-\end{table*}
+\end{table}
 
 
 \head{Time breakdown}

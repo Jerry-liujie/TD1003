@@ -509,7 +509,8 @@ $\dataflowset_{2}$
 \begin{figure*}[!t]
 \footnotesize 
 \resetmycounter{mycounter}
-\begin{centermath}
+% NOTE (dissertation): content was sized for acmart's full page width; scaled to fit.
+\begin{center}\resizebox{\textwidth}{!}{$\displaystyle
 \arraycolsep=.5pt\def\arraystretch{1.1}
 \begin{array}{l}
 % first block 
@@ -644,7 +645,7 @@ $\dataflowset_{2}$
 \end{array}
 \end{array}
 \end{array}
-\end{centermath}
+$}\end{center}
 \vspace{-10pt}
 \caption{Inference rules that explain how dataflow extraction works for some key constructs in our query language.}
 \label{slab:fig:dataflowextraction}
@@ -860,7 +861,7 @@ Line~\ref{slab:alg:lazyenumerate:yield} yields new queries $\queryset'_{\score}$
 
 \begin{figure}[!t]
 %\small 
-\footnotesize 
+\small 
 \resetmycounter{mycounter}
 \begin{centermath}
 \arraycolsep=.5pt\def\arraystretch{.8}

@@ -125,8 +125,9 @@ Note that while both \textsc{LLM-R\textsuperscript{2}} and \rbot utilize LLMs to
 \def\arraystretch{1.1}
 \vspace{-5pt}
 
-\begin{subtable}[t]{0.48\textwidth}
+\begin{subtable}[t]{0.7\textwidth}
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{  c | r r r | r r r }
 \toprule
 & \multicolumn{3}{c|}{TPC-DS} 
@@ -141,7 +142,8 @@ speedup & >2x & >10x & >50x & >1.2x & >2x & >10x \\
 \rbot     & \makecell{9\\(9.1\%)}   & \makecell{5\\(5.1\%)}  & \makecell{3\\(3.0\%)}  & \makecell{7\\(6.2\%)}   & \makecell{3\\(2.7\%)}  & \makecell{2\\(1.8\%)} \\
 \lr       & \makecell{6\\(6.1\%)}   & \makecell{4\\(4.0\%)}  & \makecell{0\\(0\%)}    & \makecell{6\\(5.3\%)}   & \makecell{2\\(1.8\%)}  & \makecell{1\\(0.9\%)} \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \captionsetup{font=small}
 \caption{Original workloads.}
 % \inv
@@ -150,8 +152,9 @@ speedup & >2x & >10x & >50x & >1.2x & >2x & >10x \\
 
 \hfill
 
-\begin{subtable}[t]{0.48\textwidth}
+\begin{subtable}[t]{0.7\textwidth}
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{  c | r r r | r r r }
 \toprule
 & \multicolumn{3}{c|}{TPC-DS (SQLStorm)} 
@@ -166,7 +169,8 @@ speedup & >2x & >10x & >50x & >1.2x & >2x & >10x \\
 \rbot     & \makecell{2\\(2.0\%)}   & \makecell{0\\(0.0\%)}  & \makecell{0\\(0.0\%)}  & \makecell{2\\(4.0\%)}   & \makecell{2\\(4.0\%)}  & \makecell{0\\(0.0\%)} \\
 \lr       & \makecell{4\\(4.0\%)}   & \makecell{1\\(1.0\%)}  & \makecell{0\\(0\%)}    & \makecell{3\\(6.0\%)}   & \makecell{1\\(2.0\%)}  & \makecell{0\\(0.0\%)} \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \captionsetup{font=small}
 \caption{\revtwo{SQLStorm-generated workloads.}}
 \label{gen:tab:speedup_comparison_sqlstorm}
@@ -397,7 +401,7 @@ from ...
       \vspace{-3mm} % Adjust to reduce internal padding of framed
       \begin{lstlisting}[
           language=SQL,
-          basicstyle=\tiny\ttfamily,
+          basicstyle=\small\ttfamily,
           numbers=left,
           numbersep=4pt,
           xleftmargin=1.5em,
@@ -425,7 +429,7 @@ where ws_item_sk in
       \vspace{-3mm}
       \begin{lstlisting}[
           language=SQL,
-          basicstyle=\tiny\ttfamily,
+          basicstyle=\small\ttfamily,
           numbers=left,
           numbersep=4pt,
           xleftmargin=1.5em,

@@ -18,6 +18,7 @@
 \newtheorem{lemma}{Lemma}[chapter]
 
 %--- Fonts ---------------------------------------------------------
+\usepackage[T1]{fontenc} % proper glyphs for < > | in text (papers relied on acmart loading this)
 \usepackage{newtxtext}      % Times-like text font
 \usepackage{newtxmath}      % matching math font
 \usepackage{microtype}
@@ -63,6 +64,14 @@
 %--- Cross-referencing (must load after hyperref, which the class
 %    loads at the end of dissertation.cls) -------------------------
 \usepackage[capitalise,nameinlink]{cleveref}
+\usepackage{xurl} % allow long URLs to break anywhere
+% The class routes \url through \href, which href-ul renders as an
+% unbreakable underlined box; long bibliography URLs then overflow into
+% the margin. Redefine \url to a directly hyperlinked, breakable form
+% (colored by urlcolor, not underlined).
+\makeatletter
+\renewcommand{\url}[1]{\hyper@linkurl{\nolinkurl{#1}}{#1}}
+\makeatother
 
 %--- Chapter-specific macros (deduplicated; conflicting names are
 %    prefixed slab/gen/dag, and \tool was renamed per chapter) -----

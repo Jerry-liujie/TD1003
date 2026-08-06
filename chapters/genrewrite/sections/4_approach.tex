@@ -20,9 +20,8 @@ The iterative rewriting pipeline in \genrewrite consists of three core component
 \begin{algorithm}[t]
   \caption{\genrewrite top-level Algorithm}\label{gen:algo:tool}
   \begin{algorithmic}[1]
-  \Require{$\mathcal{Q}$: queries, $\mathcal{L}$: LLM, $\mathcal{D}$: database, $\mathcal{T}$: tester, $B$: budget,
-   $\theta$: user-specified minimum desirable speedup}
-  \Ensure{$\mathit{Res} = \{\langle q, q', e\rangle | \forall q \in \mathcal{Q}_{opt} \subseteq \mathcal{Q}$, where $\mathcal{Q}_{opt}$ is the optimizable subset of $\mathcal{Q} \}$: Optimized queries \& associated NLR2s}
+  \Require{\parbox[t]{\dimexpr\linewidth-6em\relax}{$\mathcal{Q}$: queries, $\mathcal{L}$: LLM, $\mathcal{D}$: database, $\mathcal{T}$: tester, $B$: budget, $\theta$: user-specified minimum desirable speedup}}
+  \Ensure{\parbox[t]{\dimexpr\linewidth-6em\relax}{$\mathit{Res} = \{\langle q, q', e\rangle | \forall q \in \mathcal{Q}_{opt} \subseteq \mathcal{Q}$, where $\mathcal{Q}_{opt}$ is the optimizable subset of $\mathcal{Q} \}$: Optimized queries \& associated NLR2s}}
   \State $\mathit{Res} \leftarrow \{\}$
   \State $\text{NLR2 Repository } \mathcal{R} \leftarrow \{\}  \text{ or pre-built repository } \mathcal{R}_{pre}$
   \While{$\mathcal{Q}$ is not empty}

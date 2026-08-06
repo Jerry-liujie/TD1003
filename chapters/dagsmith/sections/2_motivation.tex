@@ -350,7 +350,7 @@ slow-changing lookup table, \code{code\_catalog}, that maps raw claim codes to d
 \captionsetup[subfigure]{justification=centering}
 \begin{subfigure}[t]{0.32\textwidth}
 \centering
-\begin{minipage}[t][51mm][t]{\linewidth}
+\begin{minipage}[t]{\linewidth}% fixed 51mm height removed: caused caption overlap in one-column layout
 {\scriptsize\textbf{Exposes:} cross-graph redundancy; reuse context\par}
 {\scriptsize\textbf{Enables:} non-local reuse; rewrite-materialization co-optimization\par\smallskip}
 {\scriptsize\textbf{Before}\par}
@@ -379,7 +379,7 @@ WHERE f_dia;
 \end{subfigure}\hfill
 \begin{subfigure}[t]{0.32\textwidth}
 \centering
-\begin{minipage}[t][51mm][t]{\linewidth}
+\begin{minipage}[t]{\linewidth}% fixed 51mm height removed: caused caption overlap in one-column layout
 {\scriptsize\textbf{Exposes:} edge semantics; downstream demand\par}
 {\scriptsize\textbf{Enables:} edge simplification; downstream-aware pruning\par\smallskip}
 {\scriptsize\textbf{Before}\par}
@@ -406,7 +406,7 @@ WHERE c.facility_code IN ('31','32')
 \end{subfigure}\hfill
 \begin{subfigure}[t]{0.32\textwidth}
 \centering
-\begin{minipage}[t][51mm][t]{\linewidth}
+\begin{minipage}[t]{\linewidth}% fixed 51mm height removed: caused caption overlap in one-column layout
 {\scriptsize\textbf{Exposes:} refresh patterns; operator placement\par}
 {\scriptsize\textbf{Enables:} frequency-aware optimization; work placement\par\smallskip}
 {\scriptsize\textbf{Before}\par}
