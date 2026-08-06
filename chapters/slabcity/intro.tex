@@ -21,7 +21,7 @@ $\wetune$~\cite{wetune} and Apache Calcite~\cite{begoli2018apache}.
 Unfortunately, the effectiveness of rule-based approaches\footnote{Rule-based query \emph{rewriting} should not be confused with rule-based query \emph{optimization}; the latter is simpler, and hence much more common in practice~\cite{graefe1987rule}.}  
 hinges on the quality and quantity of the rewrite rules provided to them~\cite{wetune}. 
 Yet, curating a large collection of high-quality rules is a very tedious, error-prone and time-consuming process that also requires deep expertise~\cite{levy1994query,mumick1990magic,muralikrishna1992improved,graefe1987exodus,graefe1993volcano,graefe1995cascades}. 
-While automated rule discovery techniques might help lessen the manual burden~\cite{wetune}, they are fundamentally limited to situations where the input query has to match one of the patterns captured by their rules. In other words --- as we will also show in this paper later --- state-of-the-art rule-based query rewriters (e.g., \wetune~\cite{wetune}) miss many optimization opportunities when faced with new query patterns they have not seen before.
+While automated rule discovery techniques might help lessen the manual burden~\cite{wetune}, they are fundamentally limited to situations where the input query has to match one of the patterns captured by their rules. In other words --- as we will also show in this chapter later --- state-of-the-art rule-based query rewriters (e.g., \wetune~\cite{wetune}) miss many optimization opportunities when faced with new query patterns they have not seen before.
 We also provide several motivating examples from both real-life and benchmark workloads in Section~\ref{slab:sec:motivating-example} that demonstrate these drawbacks.
 
 
@@ -39,7 +39,7 @@ We also provide several motivating examples from both real-life and benchmark wo
 
 
 \head{Synthesis-based query rewriting}
-Motivated by the fundamentally incomplete nature of rewrite rules, in this paper, we propose a new query rewriting approach that does not need 
+Motivated by the fundamentally incomplete nature of rewrite rules, in this chapter, we propose a new query rewriting approach that does not need 
 rewrite rules. Instead, it uses \emph{program synthesis} to \emph{directly} search for equivalent and faster queries.
 To our best knowledge, there are only two prior works\footnote{See Section~\ref{slab:sec:related} for more applications of synthesis in the databases literature.} that use program synthesis for source-to-source query rewriting~\cite{zhou2021sia,wang2022optimizing}, but they still either require rewrite rules or only allow local changes. 
 Specifically, FGH-rule~\cite{wang2022optimizing} \barzanrev{first uses a rule to match a recursion pattern from the input Datalog query $\query$ and generate an output query template with an unknown expression $H$, and then uses program synthesis to generate $H$ such that the completed output query is equivalent to $\query$. 

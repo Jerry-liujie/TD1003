@@ -1051,7 +1051,7 @@ They are most suitable for common queries (such as select-project-join) and give
 
 Our ultimate goal is to find equivalent queries that are \emph{faster}. 
 We thus use a performance ranker to select a query with the best performance among the equivalent ones. 
-In this paper, we use \texttt{EXPLAIN} cost estimates as a proxy for the actual performance. 
+In this chapter, we use \texttt{EXPLAIN} cost estimates as a proxy for the actual performance. 
 However, \slabcity can also use the actual query latency by running candidate queries against a small sample of the data (or even the entire data, when the overhead can be well-justified, e.g., for reporting dashboards where the same query will run many times). 
 The choice of how to estimate query performance is an orthogonal question and is not essential to our synthesis-based algorithm. 
 In Section \ref{slab:sec:ablation}, we present an ablation study to see the impact of using \texttt{EXPLAIN} cost estimates on the latency of the final synthesized queries. 

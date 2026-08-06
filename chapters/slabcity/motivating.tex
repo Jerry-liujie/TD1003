@@ -294,7 +294,7 @@ Again, because $\slabcity$ uses query synthesis, it is able to find $\query_{10}
 \head{Discussion}
 In our evaluation, we have come across many other interesting examples where state-of-the-art query rewriting techniques were not able to optimize the input query or even rewrite it at all, while \slabcity could (see Section~\ref{slab:sec:q1-coverage}).
 Even when they were able to optimize the query, \slabcity's output oftentimes was significantly faster (see Section~\ref{slab:sec:q2-reduction}). 
-Note that in this paper, we differentiate two terms \emph{optimize} vs. \emph{rewrite}: the former means the technique can rewrite the input query to an output query that is faster, whereas the latter means the technique can rewrite to some query which may or may not be faster. In other words, optimizing is harder than rewriting. 
+Note that in this chapter, we differentiate two terms \emph{optimize} vs. \emph{rewrite}: the former means the technique can rewrite the input query to an output query that is faster, whereas the latter means the technique can rewrite to some query which may or may not be faster. In other words, optimizing is harder than rewriting. 
 Our intention of sharing these motivating examples in Section~\ref{slab:sec:motivating-example} is to demonstrate why it is inherently difficult and error-prone to create enough rules that can handle complex and unseen situations. In contrast, a synthesis-based approach does not need a supply of hard-coded rules and can discover optimization opportunities by searching the SQL language \emph{directly}.
 
 \begin{comment}
