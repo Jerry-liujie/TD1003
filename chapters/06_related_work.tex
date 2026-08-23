@@ -1,0 +1,26 @@
+%===================================================================
+% Chapter 6: Related Work
+%
+% Consolidated from the related-work sections of the three papers,
+% per committee feedback. Current state: SHELL. The three sections
+% below are the (retitled) paper sections included largely as-is;
+% a later revision pass will deduplicate overlapping coverage
+% (query rewriting, synthesis, LLMs-for-databases) and rewrite the
+% chapter as a single thematic survey.
+%===================================================================
+\chapter{Related Work}
+\label{chap:related}
+
+% TODO(revision): replace this placeholder introduction once the
+% sections below are consolidated thematically.
+This chapter surveys the work most closely related to this
+dissertation. The three systems presented in
+Chapters~\ref{slab:chap}--\ref{dag:chap} draw on, and depart from,
+several bodies of prior work: rule-based and synthesis-based query
+rewriting, applications of large language models to database tasks,
+and the optimization of multi-query SQL pipelines. We organize the
+discussion around these themes.
+
+\input{chapters/slabcity/related}
+\input{chapters/genrewrite/sections/7_related}
+\input{chapters/dagsmith/sections/5_related}

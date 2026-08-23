@@ -139,8 +139,9 @@ drowns before it finds anything useful. And every candidate the search
 does surface must be proven equivalent to the original, a problem that
 is undecidable in general and expensive even in restricted forms.
 
-SlabCity turns this idea into the first synthesis-based technique
-capable of whole-query optimization without any rewrite rules. Its
+SlabCity~\cite{dong2023slabcity} turns this idea into the first
+synthesis-based technique capable of whole-query optimization without
+any rewrite rules. Its
 central concept is the query dataflow, a semantic abstraction of how
 data moves through a query. Dataflows give the search direction: they
 induce a scoring function that organizes the space so that candidates
@@ -184,8 +185,8 @@ equivalent but no faster; and because commercial models charge for
 every call, undisciplined use can spend more on the LLMs than the
 resulting speedups save.
 
-GenRewrite is the first holistic system to make language models
-dependable for query rewriting, and its central idea is to let rules
+GenRewrite~\cite{genrewrite} is the first holistic system to make
+language models dependable for query rewriting, and its central idea is to let rules
 return in a new form. Whenever a rewrite succeeds, GenRewrite distills
 the insight behind it into a Natural Language Rewrite Rule (NLR2), a
 human-readable strategy recorded together with the performance
@@ -223,8 +224,9 @@ single-query rewriter can see any of this, because the opportunities do
 not live inside any one query. They live in the dependencies between
 queries.
 
-DAGSmith is built on the observation that those dependencies are not
-merely execution constraints but optimization signals. Reading the
+DAGSmith~\cite{dagsmith-arxiv} is built on the observation that those
+dependencies are not merely execution constraints but optimization
+signals. Reading the
 pipeline graph, it locates the places where dependency structure
 indicates waste, uses a language model to propose refactorings that may
 span multiple transformations, and admits a proposal only after
@@ -284,8 +286,10 @@ Chapter~2 provides background on the query rewriting problem, on
 rule-based rewriting and its limits, on the spectrum of techniques for
 establishing query equivalence, and on program synthesis and large
 language models as they are used in this work. Chapters~3 through~5
-present SlabCity, GenRewrite, and DAGSmith. Chapter~6 discusses
-directions for future work, and Chapter~7 concludes.
+present SlabCity, GenRewrite, and DAGSmith. \Cref{chap:related}
+surveys related work across the three systems,
+\cref{chap:future} discusses directions for future work, and
+\cref{chap:conclusion} concludes.
 
 
 
@@ -341,7 +345,7 @@ trajectory from synthesis to LLMs, and from single queries to full
 pipelines.
 
 \paragraph{SlabCity (\cref{slab:chap}).}
-SlabCity is a whole-query, synthesis-based SQL rewriter that searches
+SlabCity~\cite{dong2023slabcity} is a whole-query, synthesis-based SQL rewriter that searches
 for semantically equivalent, faster queries without relying on
 predefined rules. It defines \emph{dataflows} for SQL queries and uses
 them to stratify the synthesis search space via a novel dataflow-based
@@ -353,7 +357,7 @@ workloads, it rewrites more queries and achieves multi-fold latency
 reductions compared to rule-based systems.
 
 \paragraph{GenRewrite (\cref{gen:chap}).}
-GenRewrite targets the same single-query setting but replaces
+GenRewrite~\cite{genrewrite} targets the same single-query setting but replaces
 synthesis-based search with LLM-guided generation anchored by
 Natural-Language Rewrite Rules (NLR2s). NLR2s capture successful
 rewrite strategies in human-readable form and serve both as prompts to
@@ -371,7 +375,7 @@ higher coverage and larger speedups than both rule-based systems and
 baseline LLM prompting.
 
 \paragraph{DAGSmith (\cref{dag:chap}).}
-DAGSmith lifts these ideas from single queries to pipelines of
+DAGSmith~\cite{dagsmith-arxiv} lifts these ideas from single queries to pipelines of
 interdependent SQL models, as popularized by dbt-style data
 transformation frameworks. Given a workload represented as a query
 DAG, DAGSmith analyzes compiled SQL and dependency edges to identify
