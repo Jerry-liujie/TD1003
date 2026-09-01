@@ -1,0 +1,271 @@
+\section{Synthesizing Rewrites with Dataflow Guidance}
+\label{slab:sec:synthesis}
+\label{slab:sec:alg}
+
+The abstraction of \cref{slab:sec:dataflow} becomes an optimizer only
+inside a search loop: something must generate candidates, consult
+their dataflows, discard the hopeless, verify the promising, and keep
+the fastest. This section describes that machinery. Its core, the
+scoring function of \cref{slab:sec:scorefunction} and the stratified
+search of \cref{slab:sec:prioritizingsearch}, is the contribution of
+Rui Dong; both are summarized here to keep the chapter self-contained,
+and the reader is referred to the publication~\cite{dong2023slabcity}
+for their complete development. The equivalence-checking and ranking
+components (\cref{slab:sec:checkingequiv,slab:sec:perfranking}) were
+developed collaboratively.
+
+\subsection{The Top-Level Loop}
+\label{slab:sec:toplevelalg}
+
+Algorithm~\ref{slab:alg:toplevelalg} shows \toolname end to end. Given
+$\inputquery$ and $\integrityconstraint$, it instantiates the CEGIS
+paradigm~\cite{solar2008program} introduced in Chapter~2 for query
+rewriting: an inductive synthesizer proposes candidates consistent
+with the counterexamples accumulated so far, and the equivalence
+checker either admits or rejects each candidate. New counterexamples
+are produced by the checker's first two layers
+(\cref{slab:sec:checkingequiv}): when the tester or the bounded
+verifier refutes a candidate, the distinguishing database it found,
+paired with the output $\inputquery$ produces on it, joins the
+accumulated set (line~\ref{slab:alg:toplevelalg:addcounterexample}).
+Checking a candidate against that set
+(line~\ref{slab:alg:toplevelalg:satisfycounterexample}) is just query
+execution, far cheaper than invoking a verifier
+(line~\ref{slab:alg:toplevelalg:checkequiv}). This is the economy
+CEGIS buys: most wrong candidates die on replayed counterexamples, and
+the expensive checker is consulted only for candidates that survive
+everything already known.
+
+\begin{figure}[!t]
+\vspace{-5pt}
+\footnotesize
+\centering
+
+\begin{algorithm}[H]
+\begin{algorithmic}[1]
+
+\myprocedure{Optimize}{$\inputquery, \integrityconstraint$}
+
+\Statex\Input{An input query $\inputquery$ and an integrity constraint $\integrityconstraint$.}
+
+
+\Statex\Output{An equivalent and faster output query $\query$.}
+
+\vspace{2pt}
+
+\State $\counterexamples \assign \emptyset$; \  $\queryset \assign \emptyset$; 
+\label{slab:alg:toplevelalg:init}
+
+
+
+\While{not timed out}
+\label{slab:alg:toplevelalg:whilebegin} 
+
+
+
+\ForAll{$\query \in \textsc{LazyEnumerate}(\inputquery)$} \label{slab:alg:toplevelalg:forloop}
+\Comment{{{\scriptsize \Circled{1}}} Query synthesizer.}
+
+
+\State \textbf{if} $\query$ doesn't pass  $\counterexamples$ \textbf{then} \textbf{continue}; \label{slab:alg:toplevelalg:satisfycounterexample}
+\Comment{Check against counterexs.}
+
+
+\State $\counterexample \assign \textsc{CheckEquivalence}(\query, \inputquery, \integrityconstraint)$;\label{slab:alg:toplevelalg:checkequiv}
+\Comment{{{\scriptsize \Circled{2}}} Equivalence checker.}
+
+\vspace{1pt}
+
+\If{$\counterexample = \emph{null}$} 
+$\queryset.\emph{add}(\query)$
+\label{slab:alg:toplevelalg:nocounterexample}
+\Comment{$\emph{null}$ means $\query$ is equivalent to $\inputquery$.}
+
+\Else \ $\counterexamples.\emph{add}( \counterexample )$;
+\Comment{Otherwise, $\counterexample$ is a new counterexample.}
+\label{slab:alg:toplevelalg:addcounterexample}
+
+\EndIf
+
+\EndFor
+
+
+\EndWhile
+\label{slab:alg:toplevelalg:whileend}
+
+\vspace{-1pt}
+\State $\query \assign \textsc{RankPerformance}(\queryset, \inputquery)$;
+\label{slab:alg:toplevelalg:checkfaster}
+\Comment{{{\scriptsize \Circled{3}}} Performance Ranker.}
+
+\State \Return $\query$;
+\label{slab:alg:toplevelalg:returnquery}
+
+\caption{{Top-level algorithm of \toolname.}}
+\label{slab:alg:toplevelalg}
+\end{algorithmic}
+\end{algorithm}
+\vspace{-10pt}
+\end{figure}
+
+The synthesizer does not enumerate blindly. Candidates are generated
+lazily (line~\ref{slab:alg:toplevelalg:forloop}) in non-ascending
+order of their dataflow-based score, defined next, so that the queries
+most likely to be equivalent to and faster than $\inputquery$ surface
+first. Candidates the checker admits accumulate in a result set
+(line~\ref{slab:alg:toplevelalg:nocounterexample}); when the time
+budget (five seconds by default) expires, the performance ranker
+(\cref{slab:sec:perfranking}) orders the result set
+(line~\ref{slab:alg:toplevelalg:checkfaster}) and the best query is
+returned, carrying the verification label
+(\cref{slab:sec:checkingequiv}) it earned.
+
+\subsection{Scoring Candidates by Dataflows}
+\label{slab:sec:scorefunction}
+
+The score realizes, as a single number, the one-sided signal of
+\cref{slab:sec:dataflow:insight}. For a program $\program$ arising in
+a context $\query_{\emph{ctx}}$, extraction
+(\cref{slab:sec:dataflow:extraction}) yields $\program$'s dataflow
+multiset $\dataflowset$, and the input query's multiset
+$\dataflowset_{\emph{in}}$ is extracted once, up front, closed under
+alternative dataflows. The score of $\program$ is the negated count of
+$\program$'s dataflows that are foreign to the input:
+\[
+\scorefunction(\program \mid \query_{\emph{ctx}})
+= - \, \big| \, \dataflowset \setminus \dataflowset_{\emph{in}} \, \big|.
+\]
+Zero is therefore the best possible score, attained exactly when every
+computation $\program$ performs already occurs in $\inputquery$; each
+foreign dataflow costs one point. Sharing is rewarded, foreignness is
+penalized, and using less than everything $\inputquery$ computes costs
+nothing, which is the asymmetry that lets optimized queries shed the
+input's redundant work without being punished for it.
+
+Because the score counts dataflows and dataflows ignore syntax, the
+score inherits the semantic character of the abstraction: a large,
+structurally ambitious candidate whose computations all come from
+$\inputquery$ outscores a tiny candidate that introduces one foreign
+computation. Ties between equal-scoring candidates are broken toward
+syntactically smaller queries, so size ordering survives as a tiebreak
+rather than as the organizing principle.
+
+Finally, the compositionality property of
+\cref{slab:sec:dataflow:extraction} transfers to the score directly:
+since a component's dataflow multiset is contained in the whole
+program's, a component's score is always at least the whole program's
+score. Composing programs can only preserve or worsen the score, never
+improve it. This monotonicity is what the search exploits.
+
+\subsection{Stratified Search}
+\label{slab:sec:prioritizingsearch}
+
+Monotonicity turns the score into a pruning device: if every building
+block available at some score level is known, then no composition of
+them can score higher, so the space can be explored in strata. The
+search algorithm enumerates queries layer by layer, first exhausting
+all candidates with score $0$ without ever constructing anything
+lower-scoring, then all candidates with score $-1$, and so on. Within
+a stratum, construction is bottom-up and follows a dynamic-programming
+design: to generate the queries of score $\score$, it suffices to
+combine queries, conditions, and target lists whose scores are at
+least $\score$, and the sets of those are exactly what the previous
+strata computed. A set of syntax-directed inference rules governs
+which compositions are attempted, mirroring the query grammar of
+\cref{slab:sec:problem}.
+
+One subtlety concerns termination within a stratum. If dataflows were
+collected into sets, a generator could manufacture unboundedly many
+new queries sharing one dataflow set, and a stratum would never close.
+Representing dataflows as multisets removes the loophole: repeating a
+computation grows the multiset, changes the difference against
+$\dataflowset_{\emph{in}}$, and lowers the score, so each stratum is
+finite.
+
+This summary deliberately omits the search algorithm's full pseudocode
+and its complete rule set, which are Rui Dong's contribution and are
+presented in detail in the publication~\cite{dong2023slabcity}.
+
+\subsection{Checking Query Equivalence}
+\label{slab:sec:checkingequiv}
+
+Every admitted candidate must be defended, and Chapter~2 laid out the
+spectrum of available defenses: testing, bounded verification, full
+verification, ordered by cost and by strength of guarantee. \slabcity
+uses all three, cheapest first, and this layering is what makes the
+checker affordable inside a search loop that proposes candidates by
+the hundreds.
+
+\head{Syntax-guided query testing}
+The first layer is a tester built specifically for this system.
+Off-the-shelf equivalence testing for a language as expressive as ours
+barely exists, and randomly generated databases are almost useless
+here: they overwhelmingly produce empty or degenerate outputs on which
+inequivalent queries agree. Our tester instead mines the queries
+themselves for hints about which databases can tell them apart.
+\begin{itemize}[leftmargin=*]
+\item
+\emph{Satisfying filter and join conditions.}
+It reads filter conditions (such as those in \sqlwherecolor) from
+$\inputquery$ and populates test databases with rows satisfying them,
+and likewise collects \sqljoincolor conditions, so that outputs and
+intermediate join results are non-empty; non-empty outputs are what
+disprove equivalence.
+\item
+\emph{Duplicating non-key values.}
+It looks for operations whose misplacement is a common source of wrong
+candidates, \sqldistinctcolor above all, and generates duplicated
+values in the affected columns: if a candidate places \sqldistinctcolor
+on a column $C$, a test database with duplicates in $C$ is exactly
+what makes a misplaced \sqldistinctcolor change the output.
+\item
+\emph{Duplicating grouping columns.}
+It compares grouping structure: when a candidate's \sqlgroupbycolor
+columns differ from the input's, it duplicates values in exactly those
+columns, the situation under which divergent groupings disagree.
+\end{itemize}
+Each family of hints is encoded as a logical formula $\varphi_1$,
+conjoined with a formula $\varphi_2$ encoding the integrity constraint
+$\integrityconstraint$, and handed to a constraint solver (such as
+Microsoft Z3); each satisfying assignment of
+$\varphi_1 \land \varphi_2$ is a test database. When the conjunction
+is unsatisfiable, no database can realize the hints under the
+constraints, and the candidate proceeds to verification.
+
+\head{Bounded verification}
+The second layer is bounded verification, reusing the bounded
+verifiers of \cosette~\cite{chu2017cosette,wang2018speeding}. Its
+exhaustiveness within the bounded space cuts both ways: a refutation
+comes with a distinguishing database, which joins the counterexample
+set exactly as the tester's do, while a positive verdict guarantees
+that $\inputquery$ and $\query$ agree on every database with at most
+$k$ rows per table ($k=2$ by default, customizable, with cell values
+unbounded). The verifier may also reach no conclusion within its
+budget, in which case the candidate retains only the tester's implicit
+endorsement.
+
+\head{Full verification}
+The final layer is full verification via \cosette and
+\spes~\cite{chu2017cosette,zhou2022spes}, which proves equivalence
+over all possible inputs but succeeds mostly on simpler query shapes
+(such as select-project-join) and costs the most; \slabcity invokes it
+parsimoniously, only for candidates nothing else could refute, and its
+refutations, unlike the earlier layers', are verdicts without
+witnesses. Each surviving candidate thus carries one of three labels,
+in decreasing strength: fully verified, bounded-verified, or tested;
+\cref{slab:sec:eval:discussion} discusses what the labels mean for
+deployment.
+
+\subsection{Performance Ranking}
+\label{slab:sec:perfranking}
+
+Equivalence is only half of \cref{slab:def:problem}; the other half is
+speed. The performance ranker orders the admitted candidates by
+estimated cost from \texttt{EXPLAIN} and returns the winner. Cost
+estimates are a proxy, and a deliberately cheap one; where the
+overhead is justified, \slabcity can instead execute candidates on a
+sample of the data, or on the full data for queries that will be rerun
+indefinitely, such as reporting dashboards. How performance is
+predicted is orthogonal to how candidates are found, and
+\cref{slab:sec:ablation} quantifies how little the choice costs:
+ranking by \texttt{EXPLAIN} comes close to ranking by true latency.

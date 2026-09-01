@@ -1,13 +1,17 @@
 \section{Problem Setup}
 \label{slab:sec:problem}
 
-This section presents the query language and integrity constraints considered by \toolname, followed by our problem definition. 
+This section fixes the search space and the goal: the query language
+\toolname operates over, the integrity constraints it can exploit, and
+the problem it solves.
 
 %\subsection{Query Space}
 %\label{slab:sec:querylanguage}
 
 \head{Query space}
-See Figure~\ref{slab:fig:querysyntax} for the formal language that supports a wide subset of SQL such as arbitrary nesting and join patterns. 
+The language, defined in Figure~\ref{slab:fig:querysyntax}, is an
+expressive subset of SQL covering arbitrary nesting and join
+structure.
 %\slabcity currently supports a wide subset of SQL queries, including arbitrary nesting and join patterns. See Figure~\ref{slab:fig:querysyntax} for the formal language currently supported by \slabcity.
 
 
@@ -16,7 +20,10 @@ See Figure~\ref{slab:fig:querysyntax} for the formal language that supports a wi
 %\label{slab:sec:integrityconstraints}
 
 \head{Integrity constraints}
-Below are the types of integrity constraints \slabcity currently supports:
+Constraints both shrink the space of databases against which
+equivalence must hold and, as Example~2 of
+\cref{slab:sec:motivating-example} illustrated, create rewrite
+opportunities. \slabcity supports the following kinds:
 \begin{itemize}[leftmargin=*]
 \item 
 Primary and foreign keys. 
@@ -47,8 +54,9 @@ Enum types (e.g., column \texttt{Device} can draw from \{ \emph{S8}, \emph{iPhon
 \end{comment}
 
 
-\head{Problem statement} 
-Now we are ready to define our problem. 
+\head{Problem statement}
+With the language and constraints in place, the problem is the
+following.
 %\subsection{Query Optimization Problem Statement}
 %\label{slab:sec:problemstatement}
 
@@ -63,6 +71,15 @@ $\query$ runs faster than $\inputquery$. Here, query performance is measured usi
 \end{enumerate}
 \label{slab:def:problem}
 \end{definition}
+
+Two aspects of the definition deserve a remark. Equivalence is
+relative to the constraints, which is what licenses rewrites like
+$\query_4$ in \cref{slab:sec:motivating-example}: they would be wrong
+on arbitrary databases and are right on the databases that can
+actually occur. And the definition asks for a faster query, not just
+an equivalent one, which is why the system must surface multiple
+equivalent candidates and rank them (\cref{slab:sec:perfranking}),
+rather than stop at the first equivalence it can prove.
 
 
 

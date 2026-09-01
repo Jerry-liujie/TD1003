@@ -83,26 +83,25 @@ That is, for input queries that can be rewritten, which technique leads to faste
 %In what follows, we describe our workloads, data generation method, baselines, and experiment environment.
 
 \head{Testbed}
-All of our experiments (including running \toolname and baselines as well as executing queries) are conducted on Amazon EC2 r5.large instances,
-% \barzan{is it EC2? if so then mention the size, eg. 2XL or something like that}
-with 16GB RAM, 200GB gp2 SSD and Xeon E5-2686 v4 CPU running Ubuntu 22.04.
-We use PostgreSQL 12.13.
+All experiments, for \toolname and baselines alike, including all
+query executions, run on Amazon EC2 r5.large instances (16GB RAM,
+200GB gp2 SSD, Xeon E5-2686 v4 CPU, Ubuntu 22.04) against PostgreSQL
+12.13.
 
-\head{Workloads} 
-{We use a wide range of different workloads:}
+\head{Workloads}
+We use four workloads of different character:
+
 \begin{itemize}[leftmargin=*]
 \item 
-\textbf{LeetCode.} 
-These are SQL queries, written by actual developers to solve different problems on LeetCode~\cite{leetcode}. 
-Specifically, we first crawled \emph{all publicly available} SQL queries accepted by LeetCode as ``correct'' solutions. However, a number of them are actually incorrect due to missing tests on LeetCode. Hence, we manually filtered out as many incorrect queries as we could. 
-In the end, we were left with a curated suite of 1131 queries overall. 
-% Our dataset contains queries that solve a wide range of tasks (see some examples from Section~\ref{slab:sec:motivating-example}). 
-%Then, we grouped these queries based on the LeetCode problem they are solving. 
-%For each problem, we were left with dozens of correct queries that are all \emph{semantically equivalent} but \emph{syntactically distinct}.
-Some of these solutions are poorly-written and therefore slow-running (which we hypothesize were authored by SQL novices) -- this makes  our LeetCode dataset especially 
-valuable for evaluating query rewriting techniques. 
-We also formalized the schemas and integrity constraints for all LeetCode tasks. 
-%based on the description from the LeetCode website. 
+\textbf{LeetCode.}
+Real queries by real developers: we crawled every publicly available
+SQL solution accepted as correct by LeetCode~\cite{leetcode},
+manually filtered out solutions that are in fact wrong despite being
+accepted (LeetCode's own tests are incomplete), and formalized the
+schemas and integrity constraints of every task, yielding a curated
+suite of 1131 queries. Many accepted solutions are visibly
+novice-written and slow, which is precisely what makes the suite
+valuable for evaluating rewriters.
 
 \begin{comment}
 \cancut{Overall, the queries were quite diverse and non-trivial. On our 10M database, \todo{xx} queries do not terminate within 10 hours, and \todo{xx} queries take at least \todo{xx} seconds to finish. Even on our smallest database with 100K rows, \todo{xx} queries take more than \todo{xx} seconds.}
@@ -112,37 +111,43 @@ We also formalized the schemas and integrity constraints for all LeetCode tasks.
 
 \item 
 \textbf{Calcite.}
-Our second workload is constructed from the Calcite's \emph{optimization rules} test suite~\cite{calcite-test-suite}, which is used in prior work~\cite{wetune} for evaluating query rewriting. We include all 794 queries. %in our experiments.
-%The Calcite project also includes the schema and integrity constraints.
-
+All 794 queries from Calcite's optimization-rules test
+suite~\cite{calcite-test-suite}, previously used for rewriter
+evaluation in~\cite{wetune}.
 
 \item 
-\barzanrev{\textbf{TPC.}
-Finally, we also use queries from the standard TPC-H~\cite{tpc-h} and TPC-DS~\cite{tpc-ds} workloads.}
+\textbf{TPC.}
+The standard TPC-H~\cite{tpc-h} and TPC-DS~\cite{tpc-ds} analytical
+benchmarks.
+
 \end{itemize}
 
 
-\head{Data generation} 
-We generate large databases for each workload. 
-For \leetcode, we use three data sizes (100K, 1M, and 10M). For \calcite, we use 250K, 1M, and 4M (4M is the largest data size that can fit in 16G memory). 
-For both workloads, we follow prior work~\cite{wetune} and use \barzanrev{two different data distributions: uniform and Zipfian
-% \barzan{isn't Zipfian capitalized everywhere?} \jie{also used in WeTune paper. And they also use the skewed parameter of 1.25. Do we need to mention it?}
-(with a skewed parameter of 1.25, as used in \cite{wetune}).}
-% \barzan{is 1.25 skeweed enough?} \jie{see above. Yes, I believe it is skewed enough}
-We also make sure the generated data meets the integrity constraints. 
-\barzanrev{For TPC-H and TPC-DS workloads, we use their official data generation script with the same scale factor as in $\learnedrewrite$~\cite{LR} (which is 1, meaning 1G data size).}
-
-
-
-
+\head{Data generation}
+For \leetcode\ we generate databases of 100K, 1M, and 10M rows; for
+\calcite, 250K, 1M, and 4M, the last being the largest that fits in
+16GB of memory. Following~\cite{wetune}, each database comes in a
+uniform and a Zipfian variant (skew parameter 1.25, as in that work),
+and all generated data respects the integrity constraints. TPC-H and
+TPC-DS data comes from the official generators at scale factor 1 (1GB
+of data), matching the setup of $\learnedrewrite$~\cite{LR}.
 
 \head{Baselines}
-We compare $\toolname$ against two state-of-the-art rule-based query rewriting techniques: 
+We compare against two state-of-the-art rule-based query rewriters:
+
 \begin{itemize}[leftmargin=*]
 \item
-\textbf{\learnedrewrite} (or \LR, VLDB 2022~\cite{LR,LR-source-code}) is a state-of-the-art \emph{rule-based} query rewriter which uses Monte Carlo Tree Search to guide the rule-based rewriting process. In particular, \LR uses rewrite rules from \calcite and was shown to outperform multiple existing techniques from prior work~\cite{begoli2018apache,pirahesh1992extensible}.
+\textbf{\learnedrewrite} (or \LR, VLDB 2022~\cite{LR,LR-source-code})
+steers the application of \calcite's rule set using Monte Carlo tree
+search, and was shown to outperform multiple earlier
+systems~\cite{begoli2018apache,pirahesh1992extensible}.
+
 \item 
-\textbf{\wetune} (or \WT, SIGMOD 2022~\cite{wetune,WT-source-code}) is the state-of-the-art automated query rewrite rule generator. It had discovered dozens of new rules, previously missing from existing rule-sets. These new rules were shown to lead to new optimizations previously not considered by existing systems (such as MS SQL Server).  
+\textbf{\wetune} (or \WT, SIGMOD 2022~\cite{wetune,WT-source-code})
+is the state-of-the-art automatic discoverer of rewrite rules; the
+dozens of new rules it found yield optimizations missed by existing
+rule sets and systems such as MS SQL Server.
+
 \end{itemize}
 
 
@@ -162,21 +167,19 @@ instances (r5.large type, with 16GB RAM, 200GB disk, Xeon E5-2686 v4 CPU, runnin
 \subsection{Coverage}
 \label{slab:sec:q1-coverage}
 
-This section reports the number of queries from each workload that \toolname can optimize, and compare it with baselines.
-
+The first question is how many queries from each workload each
+technique can optimize.
 
 \head{Setup}
-Given each query $\inputquery$ (and the corresponding schema) from each workload, we run \toolname (using a 5-second timeout) and obtain an output query $\query$. 
-Then, we check whether or not $\query$ indeed optimizes $\inputquery$ in terms of latency: if $\query$ has a smaller latency than $\inputquery$, we say $\query$ optimizes $\inputquery$. 
-%\barzan{this def should  come much earlier in the paper} %\xinyu{I added this to section 2.}
-%Similarly, $\query$ optimizes $\inputquery$ in terms of latency, if $\query$ has a smaller execution time than $\inputquery$. 
-We run each query (both input and rewritten queries) 3 times and take their average as the final latency value.
-%the first run serves as warm-up whereas the average of the next 3 runs is used as the final latency value. 
-Before each run, we restart the PostgreSQL service and clear the database cache. 
-We use 10 hours as the timeout; output queries that do not terminate before timeout are marked as ``not optimized''. 
-The same setup is used for the baselines. 
+For every input query $\inputquery$ (with its schema) we run each
+technique, \toolname with its 5-second budget, and obtain an output
+query $\query$. We then execute input and output queries three times
+each, restarting the PostgreSQL service and clearing the database
+cache before every run, average the latencies, and count $\inputquery$
+as optimized if $\query$ is faster. A 10-hour execution timeout
+applies; outputs exceeding it count as not optimized. Baselines use
+the identical setup.
 
-\vspace{5pt}
 \evalfinding{\emph{\toolname can optimize more queries across different workloads.}}
 
 
@@ -234,128 +237,85 @@ $\WT$
 \vspace{-15pt}
 \end{table}
 
-
-
-
 \head{Results}
-Figure~\ref{slab:fig:leetcode-results}(a) and Figure~\ref{slab:fig:calcite-results}(a) present the coverage results for all techinques (including $\toolname$ and baselines) across LeetCode and Calcite workloads (using a uniform distribution). 
-For example, looking at Figure~\ref{slab:fig:leetcode-results}(a), for 10M, \toolname can optimize 222 input queries, whereas $\learnedrewrite$ and $\wetune$ can only 
-optimize 132 and 20 queries, respectively. 
-\barzanrev{We also note that since $\toolname$'s checker can fully verify only a subset of its output queries, we manually inspected all the remaining queries that only pass the tester and bounded verifier (see Section~\ref{slab:sec:eval:discussion} for a detailed discussion on the limitation of full verification) and confirmed the optimizations included in our results are indeed correct} (i.e., all input-output query pairs are equivalent).
-%\barzanrev{Although the checker can offer full verification for only a subset of the output queries, we manually inspect and confirm all our optimizations are indeed correct} (i.e., all input-output query pairs are equivalent). 
-\barzanrev{For the Zipfian distribution, we obtain similar results, as shown in Table~\ref{slab:tab:zipfian-results}.}
-Overall, $\toolname$ significantly outperforms existing rule-based systems, highlighting the superiority of a whole-query synthesis-based approach.
-
-
-\barzanrev{For the TPC-H workload, $\toolname$ is able to optimize 2 (out of 22) input queries (\#17 and \#20) in less than 5 seconds. $\LR$ is able to optimize the same two queries, while $\WT$ cannot optimize any.
-The TPC-DS queries are far more complex, but $\toolname$ can still optimize three queries (\#1, \#30 and \#81) within 5 seconds. $\LR$ can optimize two (\#1, \#30) but $\LR$'s output queries are much slower than $\toolname$'s. Again, $\WT$ is not able to optimize any.}
-
-
+Figure~\ref{slab:fig:leetcode-results}(a) and
+Figure~\ref{slab:fig:calcite-results}(a) show coverage for all
+techniques on the uniform distribution. On LeetCode at 10M rows, for
+instance, \toolname optimizes 222 input queries against
+$\learnedrewrite$'s 132 and $\wetune$'s 20. Results on the Zipfian
+distribution are similar (Table~\ref{slab:tab:zipfian-results}).
+Because only a subset of \toolname's outputs is fully verified, we
+manually inspected every output query that passed only the tester and
+bounded verifier, and confirmed that all optimizations counted here
+are genuine equivalences; \cref{slab:sec:eval:discussion} discusses
+the limits of full verification at length. On TPC-H, \toolname
+optimizes 2 of the 22 queries (\#17 and \#20) within 5 seconds, the
+same two as $\LR$, while $\WT$ optimizes none. On the far more
+complex TPC-DS, \toolname optimizes three (\#1, \#30, \#81); $\LR$
+optimizes two of them (\#1, \#30) with markedly slower outputs, and
+$\WT$ again none.
 
 \head{Discussion}
-The gap between \toolname's coverage and baselines' on LeetCode is much higher than that on Calcite: we believe this highlights the usefulness of our LeetCode dataset and the advantage of our synthesis-based technique over rule-based ones in optimizing new query patterns. 
-In particular, LeetCode has more queries that are larger and use more aggregation and window functions than those in Calcite. 
-\barzanrev{While $\toolname$'s coverage is considerably higher than all baselines, there are still 
-some queries covered by baselines and not covered by $\toolname$.
-%While rare (\todo{??\% for)}, 
-Some of these queries involve operators (e.g., coalesce) that are not yet supported by our prototype. 
-Another reason has to do with our 5s timeout. 
-Our plan for future improvement of our prototype (e.g., supporting more operators and optimizing the performance such as by parallelizing the search) should help with both reasons.}
-%Another reason is our 5s timeout. 
-%Our plans for future improvement of our implementation (supporting more operators and improving the efficiency) should help with both reasons.}
-
-
-
-
-
-\begin{comment}
-    
-
-\todo{if above looks good, we can comment out below. }
-\jierevision{There are two primary explanations as to why our tool may be unable to optimize for certain queries, while baselines can. The first reason is that baselines rewrite the input query by employing operators (e.g., $\sqlcoalescecolor$) that are not available in our DSL. The second reason is that sometimes our score function fails to capture the similarity in semantics of different dataflows and hence assigns some promising candidates with lower scores than expected. As a result, they cannot be found within 5s timeout. Table~\ref{slab:tab:Q11-Q12} shows queries finding the team size of each employee. \slabcity did not capture the relationship between $\sqloncolor \ e1.team = e2.team$ and $\sqlgroupbycolor \ team$ and failed to find the optimal query. To address this issue, one solution is to adjust the score function to take this relationship into account. However, it is important to note that incorporating more dataflows will inevitably lead to increased search time, which is a tradeoff that needs to be carefully balanced.} 
-
-\begin{table}[!t]
-\small 
-\begin{tabular}{|c|c|}
-\hline
- $\query_{11}$
-
- & 
-  % \\
-  %             \hspace{2em} 
- \makecell[l]{\sqlselectcolor \  e1.employee\_id, \sqlcountcolor(e2.employee\_id) \sqlascolor s\\
-              \sqlfromcolor employee \sqlascolor e1 \sqljoincolor employee \sqlascolor e2 \sqloncolor e1.team = e2.team\\
-              $\sqlgroupbycolor$ e1.employee\_id
-              }  
-\\
-\hline
-$\query_{12}$
-&
- \makecell[l]{ \sqlselectcolor e1.employee\_id, e2.s, \\ \sqlfromcolor employee \sqlascolor e1 \sqljoincolor \\
- \hspace{0.5em} (\sqlselectcolor team, \sqlcountcolor(*) \sqlascolor s \sqlfromcolor employee \sqlgroupbycolor \ team) \sqlascolor e2 \\ \hspace{0.5em} \sqloncolor e1.team = e2.team}
- 
-  \\
- \hline
-\end{tabular}
-\vspace{5pt}
-\caption{\jierevision{$\query_{11}$ is human-written. $\query_{12}$ is the optimal form.}}
-\vspace{-20pt}
-\label{slab:tab:Q11-Q12}
-\end{table}
-
-\end{comment}
-
+The margin over the baselines is much wider on LeetCode than on
+Calcite, which is the expected signature: Calcite's queries are the
+home turf of Calcite-derived rule sets, while LeetCode's larger
+queries, heavy with aggregation and window functions, present exactly
+the unseen patterns rule sets miss. The gap is evidence for both the
+dataset's usefulness and the approach's premise. The baselines do
+cover a few queries \toolname misses: some use operators our
+prototype does not yet support (coalesce, for example), and some fall
+to the 5-second budget. Supporting more operators and parallelizing
+the search are engineering paths that address both.
 
 \subsection{Query Latency Reduction}
 \label{slab:sec:q2-reduction}
 
-
-In this section, we compare the performance of queries synthesized by $\toolname$  with those generated by (rule-based) baselines. Higher coverage (Section~\ref{slab:sec:q1-coverage}) means $\slabcity$ can optimize more queries, 
-but does it also lead to better (i.e., faster) queries than baselines?
+Coverage says \toolname optimizes more queries; this subsection asks
+whether it also optimizes them better, comparing the performance of
+its outputs against the baselines' outputs.
 
 \head{Setup}
-We use the same setup as in Section~\ref{slab:sec:q1-coverage} and measure the reduction ratio in query latencies across each technique's output queries. 
-For example, given $\inputquery$ and its corresponding output query $\query$ synthesized by \toolname, a latency reduction of 5x means $\query$ is 5x faster than $\inputquery$. 
-We still use 10 hours as the timeout --- in case of a timeout, we use 10 hours as the latency; however, if both $\inputquery$ and $\query$ time out, we do not include this data point. 
-%Latency reduction ratios for baselines are measured in the same way.
+Using the setup of \cref{slab:sec:q1-coverage}, we measure each
+technique's latency reduction ratio: for an input $\inputquery$ and
+output $\query$, a reduction of 5x means $\query$ is five times
+faster. A timed-out query enters the ratio with the 10-hour timeout as
+its latency; pairs where both input and output time out are excluded.
 
-\vspace{5pt}
 \evalfinding{\emph{\toolname generates faster queries across different workloads.}}
 
 
+
+
 \head{Results}
-We present the latency reduction results for LeetCode and Calcite workloads (using a uniform distribution) in Figure~\ref{slab:fig:leetcode-results}(b) and Figure~\ref{slab:fig:calcite-results}(b). 
-For example, looking at Figure~\ref{slab:fig:leetcode-results}(b), for 10M (rightmost figure), on average, $\toolname$ achieves a 50.3x latency reduction ratio \emph{across all output queries}, whereas $\LR$ is 1.4x and $\WT$ is 12x. 
-\barzanrev{We also report additional statistics: median (50th) and 75th percentiles.}
-As we can see, $\toolname$ always outperforms baselines by a significant margin across both workloads and for all data sizes. 
-\barzanrev{For output queries that can be covered (i.e., optimized) by $\toolname$,} the median is as high as 1.9x for LeetCode and 2.2x for Calcite.
-% \barzan{what does it mean for median to be up to? shouldn't median be a single number?
-% maybe we can reword to `as high as` instead of up to}
-% \xinyu{because we have multiple data sizes.}
-% \barzan{the following is confusing: we say on the other hand if we said on the one hand earlier which we didn't early. what are we trying to say in the next sentence? } \xinyu{we can remove OTOH}
-% On the other hand, 
-\barzanrev{For the Zipfian distribution, $\toolname$ also outperforms all baselines; see Table~\ref{slab:tab:zipfian-results} for more details.}
+Figure~\ref{slab:fig:leetcode-results}(b) and
+Figure~\ref{slab:fig:calcite-results}(b) report the reduction ratios,
+with geometric means as well as medians and 75th percentiles. On
+LeetCode at 10M, \toolname's mean reduction across all its output
+queries is 50.3x, against 1.4x for $\LR$ and 12x for $\WT$, and its
+lead holds across both workloads and all data sizes. Among the queries
+\toolname covers, the median reduction reaches 1.9x on LeetCode and
+2.2x on Calcite. The Zipfian distribution again agrees
+(Table~\ref{slab:tab:zipfian-results}). On TPC-H, \toolname and
+$\LR$ both achieve speedups of more than an order of magnitude. On
+TPC-DS, \toolname optimizes one query $\LR$ cannot, produces faster
+outputs on the two queries both can handle, and accelerates all three
+of its optimized queries by at least an order of magnitude.
 
-\barzanrev{For TPC-H, $\toolname$ and $\LR$ achieve similar latency speed-ups (both by more than an order of magnitude). 
-For TPC-DS, $\toolname$ can optimize one query that $\LR$ is not able to optimize. For the two TPC-DS queries that both can optimize, $\toolname$ outputs faster queries compared to $\LR$'s. For all three TPC-DS queries, $\toolname$ can speed-up the original queries by at least one order of magnitude.}
-
-%\xinyurevision{\todo{For TPC-H, $\toolname$ and $\LR$ produce queries with very similar latency reduction ratios. However, for TPC-DS, $\toolname$'s output queries are significantly faster. In particular, it achieves a {1034x} reduction for query \#1 and $\LR$ is {189x}. For \#30, $\toolname$ is {113x} and $\LR$ is {26x}. \ruirevision{For \#81, $\toolname$ is 364x and $\LR$ can not optimize.}}}
-
-
-{\head{Discussion}
-Similar to Section~\ref{slab:sec:q1-coverage}, \toolname's margins of improvement on LeetCode are even more significant than on Calcite, which we believe is due to the same reasons mentioned earlier: 
-existing rule-based systems and \learnedrewrite's rule-set are specifically designed based on Calcite queries and LeetCode is a useful dataset to evaluate query rewriters. 
-Careful readers may observe that \toolname's reduction on LeetCode 10M is lower than that on 1M.
-This is due to 15 input queries (all from problem \#1308) which do not terminate within 10 hours on both sizes. Surprisingly, \toolname is able to optimize these queries: the fastest output query terminates in 3 seconds on 1M but takes more than 30 seconds on 10M. 
-As we used 10 hours as the latency for the timed-out input query in both cases, this makes the reduction on 10M lower than that on 1M.}
-
-
-
+\head{Discussion}
+As with coverage, the LeetCode margins exceed the Calcite margins, for
+the same home-turf reason: the baselines' rule sets are designed
+around Calcite-style queries, and LeetCode supplies what they have not
+seen. One apparent anomaly deserves explanation: \toolname's mean
+reduction on LeetCode 10M is lower than on 1M. The cause is 15 input
+queries (all from problem \#1308) that exceed the 10-hour timeout at
+both sizes and therefore enter the ratio with identical 10-hour
+numerators, while \toolname's outputs for them run in 3 seconds at 1M
+but over 30 seconds at 10M; the denominators grow while the numerators
+cannot, and the 10M mean shrinks.
 
 \begin{table}[!t]
-%\small 
 \footnotesize
-\caption{\small Time breakdown on average and other statistics.}%Bottom:  other statistics (e.g., the average number of queries enumerated).}
+\caption{\small Time breakdown on average and other statistics.}
 \vspace{-8pt}
 \centering
 \setlength{\tabcolsep}{3pt}
@@ -564,32 +524,20 @@ w/ exact latencies
 
 
 \head{Time breakdown}
-Table~\ref{slab:tab:time-breakdown} shows the breakdown of how much time on average \toolname spends in each component (such as search and equivalence checking) and other statistics (such as the average number of queries generated during synthesis). 
-In general, query equivalence checking (including both testing and verification) takes the majority of the time. 
+Table~\ref{slab:tab:time-breakdown} attributes \toolname's runtime to
+its components, alongside other statistics such as the average number
+of candidates generated. Equivalence checking, testing plus
+verification together, dominates, absorbing the majority of the budget
+on both workloads.
 
-
-\barzanrev{\head{Synthesis efficiency}
-While $\toolname$ uses a 5s \emph{timeout}, many of its output queries are discovered 
-much earlier.
-Specifically, {58\%} of its output queries (generated using 5s timeout) are found within {1} second. 
-In the words, the actual synthesis time to find the output query is shorter. 
-Table~\ref{slab:tab:running-time-stats} presents the median and max of $\toolname$'s actual synthesis time for LeetCode and Calcite queries that $\toolname$ can rewrite.
-As expected, rule-based approaches are generally faster, though $\LR$'s max time on Calcite is much slower. 
-For TPC-H and TPC-DS, $\toolname$ takes 4-5 seconds for all queries it can optimize.}
-%\xinyurevision{In comparison, $\LR$  is significantly slower: it takes up to 25 seconds for TPC-DS.}}
-
-
-
-
-
-
-
-
-
-
-
-
-
+\head{Synthesis efficiency}
+The 5-second figure is a budget, not the typical time to a solution:
+58\% of \toolname's output queries are found within one second.
+Table~\ref{slab:tab:running-time-stats} gives the median and maximum
+of actual synthesis time on the LeetCode and Calcite queries \toolname
+can rewrite. Rule-based approaches are generally quicker per query,
+though $\LR$'s worst case on Calcite is far slower; on TPC-H and
+TPC-DS, \toolname spends 4 to 5 seconds on each query it optimizes.
 
 \begin{comment}
 
@@ -640,38 +588,37 @@ On the other hand, our query search component tends to be quite fast. In particu
 
 
 \head{Impact of CEGIS}
-How beneficial is the use of CEGIS? That is, if we do not re-use counterexamples when disproving queries, how inefficient would \toolname become? 
-%In general, program synthesis is known to be prohibitively slow without using counterexamples~\cite{solar2008program}. To validate this in the context of synthesis-based query rewriting, 
-%For instance, 
-For LeetCode, with CEGIS, on average, $\toolname$ can search {437} queries in 5 seconds, where {1.4} counterexamples are generated; however, without re-using these examples, it can only search 175 queries on average within the same amount of time. 
-This is because the tester spends extra time generating new counterexamples which are later dropped, but clearly they can be re-used to disprove other queries.  
-This validates the observation made in prior work that CEGIS helps boost efficiency~\cite{solar2008program}. 
-
-%generate \tofix{the examples from scratch.}\barzan{can we instead say `to disprove the same queries'?}
-%This validates the observation made in other domains that CEGIS is critical for synthesis efficiency~\cite{solar2008program}. 
-
-
-
+Does counterexample reuse earn its place? With it, \toolname examines
+437 candidates on average within 5 seconds on LeetCode while
+generating only 1.4 counterexamples; a variant that discards each
+counterexample after one use manages only 175 candidates in the same
+time. The saved time is exactly the tester time not spent regenerating
+refutations that old counterexamples replay for free, confirming in
+this domain the efficiency observation that motivated
+CEGIS~\cite{solar2008program}.
 
 \head{Impact of query testing}
-It is critical to reduce the frequency of invoking query verification. 
-For instance, for LeetCode, on average our tester can disprove several dozens of queries within 1 second, whereas the verifier typically can handle at most a couple of queries within the same amount of time.
-%A variant of \slabcity that invokes the query verifier to disprove \emph{every} candidate query (rather than always running the tester first)
-
+The frequency of verifier calls is the cost that must be controlled:
+within one second the tester can refute several dozen candidates,
+while the verifier handles at most a couple. Without the testing
+layer, verification alone would throttle the search.
 
 \head{Impact of using dataflows to guide search}
-A variant of $\slabcity$ that uses a naive search algorithm (that enumerates queries based on query size) was not able to optimize any of our input queries within 5 seconds. 
-This highlights the importance of using dataflows to significantly accelerate query synthesis. 
+A variant of \slabcity with the dataflow guidance removed, enumerating
+candidates by size as standard synthesis does, optimizes none of our
+input queries within the 5-second budget. Of all the ablations this is
+the starkest: without the abstraction of \cref{slab:sec:dataflow},
+nothing else in the system has time to matter.
 
 \head{Impact of using cost estimates for ranking}
-\texttt{EXPLAIN} is known to give inaccurate cost estimates. 
-We study a variant of \slabcity where, instead of \texttt{EXPLAIN}, we  use the actual latency for each query (by running it against the database). 
-While this variant is clearly impractical, it helps us understand how much \slabcity could be improved if we had access to a perfect predictor that could give the exact latency values. 
-Table~\ref{slab:tab:exact-latencies} compares $\toolname$ w/ exact latency against our current $\toolname$ w/ \texttt{EXPLAIN} in terms of coverage; Table~\ref{slab:tab:exact-latencies} compares them in terms of latency reduction. 
-In general, using exact latencies yields slightly higher coverage and latency reduction ratios, which is expected as that is the perfect predictor. 
-However, we notice that using \texttt{EXPLAIN} to estimate query latency gives very close results and we believe this is a reasonable trade-off. 
-
-
+\texttt{EXPLAIN} is known to give inaccurate cost estimates, so we
+compare production \slabcity against a variant that ranks by true
+measured latency, obtained by running every candidate against the
+database: an impractical oracle, but an informative ceiling.
+Table~\ref{slab:tab:exact-latencies} compares the two in coverage and
+in latency reduction. The oracle is only slightly better on both
+counts: \texttt{EXPLAIN}'s estimates come close enough that the cheap
+proxy is a sound trade.
 
 \begin{comment}
     
@@ -749,38 +696,54 @@ w/ exact latencies
 
 
 \head{Percentage of fully verified rewrites}
-A subset of $\slabcity$'s rewrites can be \emph{fully} verified by the {full} verifier --- meaning queries in this subset are guaranteed to be equivalent to their corresponding input queries, \emph{for all possible inputs}.
-For example, for LeetCode 100K, {17\%} of the queries can be fully verified by $\cosette$ and $\spes$. We explain the implications in the next Section~\ref{slab:sec:eval:discussion}.
-
+A subset of \slabcity's rewrites clears the full verifier, carrying
+the strongest guarantee possible, equivalence over all inputs: on
+LeetCode 100K, that subset is 17\% (verified by \cosette and \spes).
+What the remaining rewrites' labels mean is the subject of the next
+subsection.
 
 \subsection{Discussion}
 \label{slab:sec:eval:discussion}
 
 
-\barzanrev{While $\toolname$'s percentage of fully verified rewrites (about 17\%) might sound low, one 
-must remember that the vast majority of rewrite rules in existing rule-based techniques are not fully verified~\cite{chu2017hottsql,chu2018axiomatic} and rely on human verification, which is error-prone. In fact, a considerable fraction (about 5\%) of rewrites generated by $\learnedrewrite$ using the Calcite rule-set were proved  incorrect by $\toolname$'s checker. %Further inspection also revealed multiple buggy rewrite rules (confirmed by Calcite developers~\cite{calcite-bug-1,calcite-bug-2,calcite-bug-3}). 
-In contrast, all of $\toolname$'s rewrites pass the checker. 
-Even those few prior approaches that do offer formal guarantees, they do so for a much smaller 
-%percentage
-{number}
-of queries than $\toolname$ (e.g., 7 queries in the FGH work~\cite{wang2022optimizing}). 
-%vs. \xinyurevision{more than 50 in $\toolname$}). 
+The 17\% full-verification rate invites a misreading that is worth
+correcting with the frame Chapter~2 established: guarantees come in
+degrees, and the relevant comparison is not against perfection but
+against the alternative. Rule-based rewriting inherits its correctness
+from its rules, and the vast majority of rules in deployed rule sets
+are themselves not formally
+verified~\cite{chu2017hottsql,chu2018axiomatic}; they rest on
+error-prone human judgment. The consequences are measurable: about
+5\% of the rewrites $\learnedrewrite$ produced from the Calcite rule
+set were proved \emph{incorrect} by \toolname's own checker, whereas
+every \toolname output passes that same checker. The few prior
+approaches that do offer formal guarantees have done so at very small
+scale, such as the 7 queries of the FGH
+work~\cite{wang2022optimizing}. And for \slabcity's target
+deployments, described in \cref{slab:sec:intro}, queries that are
+rerun many times and inspected once before entering service, such as
+BI dashboards, a bounded-verification label is a workable outcome: the
+human inspection happens exactly where a human was already in the
+loop, at query-definition time and before production.
 
-In reality, the percentage of rewrites that can benefit from full verification has little impact on $\toolname$'s specific use case, which, as explained in Section~\ref{slab:sec:intro}, is any scenario where a query is rerun many times, such as BI dashboard queries. 
-In such scenarios,  many rewrites receiving a ``bounded verification'' flag is not a hindrance since the human inspection can be performed at the time of defining the queries and before deploying the dashboard to production.}
+The tester and bounded verifier also do quiet work on the other side
+of the ledger. First, they eliminate incorrect rewrites very
+effectively, by more than 80\%, so that human experts inspect a short
+list of high-quality rewrites rather than a stream of near-misses; the
+5\% of $\LR$'s rewrites our checker disproves illustrates the same
+filter applied outward. Second, surviving the two layers is itself
+strong evidence: among \toolname's rewrites that pass, 97\% are
+confirmed correct (by full verification or manual inspection) and only
+3\% are found to be incorrect.
 
-\barzanrev{Furthermore, $\toolname$'s use of a tester and a bounded verifier in conjunction with full verification offers two key improvements. 
-First, they can very effectively eliminate incorrect rewrites (by more than 80\%) and hence allow human experts to focus their effort on inspecting a much smaller set of high-quality rewrites. For example, as mentioned earlier, our checker proves 5\% of $\LR$'s rewrites to be wrong. 
-Second, rewrites that pass our tester and bounded verifier are highly likely to be correct: among $\toolname$'s rewrites that pass, 97\% of them are confirmed to be correct (either via full verification or manual inspection) and only 3\% are found to be incorrect.}
-
-\barzanrev{Finally, $\toolname$ is an important step in the right direction: there are many use cases that are not covered by state-of-the-art techniques, and $\toolname$ can discover non-trivial whole-query optimizations for many of those cases.  
-$\toolname$ can also be used to augment existing approaches, whereby 
-one can still rely on rule-based rewriting when applicable and invoke $\toolname$ otherwise.}
-
-
-%\barzanrev{In fact, $\toolname$'s use of an automated tester and a bounded verifier in conjunction with full verification is a major improvement: (1) queries that are fully verified need no human inspection at all, and more importantly (2) our tester and bounded verifier can eliminate incorrect rewrites (by more than 80\%). This allows the human experts to focus their effort on inspecting a much smaller subset of high-quality rewrites. In contrast, existing techniques immediately resort to manual inspection when the (limited) full verification fails.}
-
-%\barzanrev{We also note that the tester and bounded verifier in $\toolname$ are very effective in practice: it is quite rare for an incorrect query to pass our checker. As mentioned earlier, the checker proves 5\% of $\learnedrewrite$'s rewritten queries to be wrong and reveals multiple buggy rewrite rules from Calcite. For $\toolname$'s rewrites that pass its tester and bounded verifier, 97\% of them are confirmed to be correct (either via full verification or manual inspection) and only 3\% are found to be incorrect.}
+Seen whole, the trade \toolname offers is optimization capability
+against manual assurance overhead: it reaches rewrites that rule-based
+systems structurally cannot, and pays for that reach with more
+rewrites needing human sign-off, a cost that better automated
+verifiers will progressively reduce. The approach is also
+complementary rather than competitive: one can rely on rule-based
+rewriting where its rules apply and invoke \toolname everywhere else,
+taking the best of both.
 
 \begin{comment}
 

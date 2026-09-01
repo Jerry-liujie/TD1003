@@ -1,22 +1,23 @@
 \section{Motivating Examples}
 \label{slab:sec:motivating-example}
 
-In this section, we present a few examples to highlight the inherent limitations of rule-based 
-query rewriting techniques and motivate the need for a synthesis-based whole-query optimization approach. 
+Chapter~2 made an abstract claim: rule-based rewriting is bounded by
+its rule set. This section makes the claim concrete. It walks through
+four queries, drawn from two sources also used in our evaluation
+(\cref{slab:sec:eval}): solutions written by real developers on
+LeetCode, and test queries from the Apache Calcite
+project~\cite{calcite}. For each, we show the rewrite \slabcity
+finds, and examine why encoding that rewrite as a rule would be
+somewhere between painful and hopeless.
 
-
-All examples in this section are from two workloads: (1) real-life queries written by LeetCode users, 
-%\footnote{The world's most popular online programming platform: https://leetcode.com/} users, 
-and (2) benchmark queries from the Apache Calcite project~\cite{calcite}.
-%\footnote{https://calcite.apache.org/}. 
-We later present more comprehensive experiments on both workloads among others in Section~\ref{slab:sec:eval}. 
-%but here we only use a handful of them as motivating examples.
-
-\head{Example 1. Optimization with window functions} 
-Consider LeetCode problem \#1308: a competition is held among teams of different genders. Given the table called \texttt{scores} with three columns \texttt{(gender,day,score)} where \texttt{(gender,day)} is the primary key, the goal is to find the running total score for each gender on each day. 
-$\query_1$ in Table~\ref{slab:tab:Q1-Q2}  is the human-written solution for this problem (submitted by LeetCode participants) while 
-$\query_2$ is \slabcity's automatically generated query after rewriting $\query_1$. 
-$\query_2$ is more than 2000x faster than $\query_1$ on a database randomly populated with 1 million rows. 
+\head{Example 1. Restructuring around window functions}
+LeetCode problem \#1308 asks, over a table \texttt{scores} with
+columns \texttt{(gender,day,score)} and primary key
+\texttt{(gender,day)}, for the running total score of each gender on
+each day. $\query_1$ in Table~\ref{slab:tab:Q1-Q2} is a
+participant-written solution; $\query_2$ is what \slabcity produces
+from it. On a randomly populated database of one million rows,
+$\query_2$ runs more than 2000x faster. 
 
 \begin{table}[!t]
 \footnotesize
@@ -51,34 +52,43 @@ $\query_2$
 
 
 
-$\query_1$ is slow for two reasons. First, it uses a self-join to compute the running total, which generates a massive intermediate result. 
-The same running total can be obtained using a window function as shown in $\query_2$. Second, the use of \sqldistinctcolor in $\query_1$ is redundant, since \texttt{(gender,day)} is the primary key. 
-
-%\head{Limitations of rule-based techniques}
-
-It is difficult to express any local rewrite rule to do this kind of optimization for $\query_1$ because nearly every part of the query would have to change. Moreover, anticipating these kinds of patterns in advance and writing a rule for each would be tedious (if not impossible). 
-Even if one can create rules for a query like $\query_1$, many constraints would need to be met to ensure correctness, necessitating a potentially very complex pattern-matching. 
-%and a very complex pattern matching would be needed. 
-However, \slabcity's synthesis-based optimization can deal with such cases easily because, instead of doing constraint checking and pattern-matching, \slabcity~\emph{directly} searches the query language (as defined in Figure~\ref{slab:fig:querysyntax}),
-allowing it to discover semantically equivalent and faster queries that may be quite different \emph{syntactically}. 
-For these reasons, none of the state-of-the-art rule-based rewriters, such as {\learnedrewrite} (\LR)~\cite{LR} and {\wetune} (\WT)~\cite{wetune}, were able to optimize $\query_1$.\footnote{We explain how these state-of-the-art query rewriters work in more detail and report comprehensive experimental results in Section~\ref{slab:sec:eval}.}
+Two defects make $\query_1$ slow. It computes the running total
+through a self-join, materializing a huge intermediate result where a
+window function computes the same total in a single pass. And its
+\sqldistinctcolor is dead weight: \texttt{(gender,day)} is the
+primary key, so duplicates cannot arise. Repairing either defect by
+rule is awkward, because the repair is not local: getting from
+$\query_1$ to $\query_2$ changes nearly every clause of the query, so
+no rule that matches and replaces a fragment of $\query_1$ can express
+it, and a rule matching the whole shape of $\query_1$ would need to
+anticipate this exact pattern, along with the side conditions
+guaranteeing its correctness. Anticipating every such pattern in
+advance is the losing game that Chapter~2 described. \slabcity plays a
+different game: it searches the query language itself (defined in
+Figure~\ref{slab:fig:querysyntax}) for equivalent formulations, so a
+rewrite that shares almost no syntax with the input is as reachable as
+a local patch. Neither {\learnedrewrite} (\LR)~\cite{LR} nor
+{\wetune} (\WT)~\cite{wetune}, the state-of-the-art rule-based
+rewriters we evaluate in \cref{slab:sec:eval}, is able to optimize
+$\query_1$ at all.
 
 
 %We will also use $(\query_1, \query_2)$ as a running example in Section~\ref{slab:sec:alg} to help illustrate details of our technique. 
 
 
-\head{Example 2. Exploiting integrity constraints} 
-The following is LeetCode problem \#1821.  
-Given table \texttt{customers} with columns \texttt{(cid,year,revenue)} and \texttt{(cid,year)} as its primary key, the goal is to report  customers with positive revenue in  the year 2021. 
-$\query_3$ from Table~\ref{slab:tab:Q3-Q4} is the human-written solution\footnote{While a database expert might be surprised why the user missed the integrity constraint and wrote such an inefficient query in the first place, situations like this are quite common in the industry for two reasons: (1) most queries are rewritten by users who are not SQL proficient, such as business users and financial analysts~\cite{slow-query-impact-5,slow-query-impact-7}
+\head{Example 2. Reasoning from integrity constraints}
+LeetCode problem \#1821 asks, over a table \texttt{customers} with
+columns \texttt{(cid,year,revenue)} and primary key
+\texttt{(cid,year)}, for the customers with positive revenue in the
+year 2021.
+$\query_3$ from Table~\ref{slab:tab:Q3-Q4} is the human-written solution\footnote{One may wonder how a query this inefficient gets written at all; in industry practice, quite easily, for two reasons: (1) much production SQL is authored by users who are not SQL experts, such as business users and financial analysts~\cite{slow-query-impact-5,slow-query-impact-7}
 % ~\cite{Jie/Rui plz find a lot of links online to posts where ppl complain about poorly written SQL queries and cite them here} \xinyu{Jie: add cites here?} \jie{working on this}
-, and (2) modern warehouses have hundreds of tables, and the knowledge of the schema and integrity constraints are thus scattered across different teams, especially in larger organizations~\cite{arora2011schema,stein2014enterprise}.
+, and (2) a modern warehouse spans hundreds of tables whose schemas and integrity constraints are known piecemeal, scattered across teams, especially in larger organizations~\cite{arora2011schema,stein2014enterprise}.
 % ~\cite{Jie/Rui see if you can find some links supporting this. i know this is true anecdotally}. \xinyu{Jie/Rui: add cites?} \jie{working on this}
-}  
-for this task, while 
-$\query'_4$ and $\query_4$ are $\slabcity$'s automatically generated queries for $\query_3$, which 
-are  1.27x and 5.47x faster respectively (on a database with 1M rows).
-$\slabcity$ can generate both $\query_4'$ and $\query_4$ but returns the latter due to its superior performance.
+};
+\slabcity discovers both $\query'_4$ (1.27x faster on a database with
+1M rows) and $\query_4$ (5.47x faster), and returns $\query_4$ as the
+better of the two.
 
 \begin{table}[!t]
 \footnotesize 
@@ -131,25 +141,39 @@ $\query_4$
 %Capturing this kind of rewrite for rule-based techniques is inherently difficult as their ability to exploit integrity constraints is rather weak. For example, they are comfortable with checking if a single column is primary key so that a specific rule can be applied but they cannot infer if a single column (not primary key) is unique given a set of integrity constraints, which requires reasoning ability. As a result, syntactic pattern matching needs to be used more heavily to make up for their weak constraint checking, which is error-prone and still incomplete. In contrast, since \slabcity is not restricted to rules, as long as there is an optimal query in the search space, it will eventually find it.
 
 
-$\query_3$ is slow because it uses an unnecessary window function with $\sqlpartitionbycolor$. $\query'_4$ achieves the same goal faster by replacing the window function with aggregation and $\sqlgroupbycolor$. This is because \texttt{(cid,year)} is the primary key --- once \texttt{year} is fixed, there is only a tuple for each unique value of \texttt{cid}. 
-That is, partitioning by \texttt{(cid,year)} and grouping by \texttt{cid} when  \texttt{year=2021} leads to the same groups. 
-Exploiting this integrity constraint further, 
-\slabcity is able to find an even more optimized query $\query_4$.
-This is because 
-each \texttt{(cid,year)} will also determine a unique \texttt{revenue}, making the summation unnecessary.  
-However, none of the state-of-the-art rule-based techniques could optimize or even rewrite $\query_3$ to anything. 
-Capturing this kind of rewrite for rule-based techniques is nearly impossible, as they heavily rely on pattern-matching and their ability to exploit integrity constraints is largely limited to local changes (e.g., removing redundant grouping columns or redundant left joins).
-In contrast, because \slabcity is  not restricted to rewrite rules fundamentally, as long as there is a better query in the query space, it will eventually find it. 
+The inefficiency in $\query_3$ is a window function with
+$\sqlpartitionbycolor$ that the constraints render pointless. Because
+\texttt{(cid,year)} is the primary key, fixing \texttt{year} leaves
+at most one row per \texttt{cid}, so partitioning by
+\texttt{(cid,year)} and grouping by \texttt{cid} coincide once the
+year is pinned to 2021; $\query'_4$ exploits this to replace the
+window function with plain aggregation and $\sqlgroupbycolor$.
+Pushing the same reasoning one step further, the key also functionally
+determines \texttt{revenue}, so even the aggregation is unnecessary,
+which is the rewrite $\query_4$ embodies. Neither \LR nor \WT can
+rewrite $\query_3$ into anything. The obstacle is that rule engines
+consult integrity constraints only through narrow, hard-coded side
+conditions attached to patterns; deriving consequences of a constraint
+set, such as the uniqueness of a non-key column in a filtered context,
+is inference, not pattern matching. \slabcity does not need the
+inference to be anticipated: if a better query exists in the search
+space, the search can reach it. 
 
 
 
-\head{Example 3. Eliminating redundant joins} 
-Calcite comes with a rich set of test cases to check if its rewrite rules function properly.
-$\query_5$ in Table~\ref{slab:tab:Q5-Q7} is one of those test cases (``testPushAggregateThroughOuterJoin14'') where 
-Calcite rewrites $\query_5$ to  $\query_6$. Here, \texttt{emp} is a table with three columns \texttt{(empno,ename,mgr)} with \texttt{empno} as its primary key. 
-$\query_5$ performs a full self-join of \texttt{emp} on the \texttt{mgr} column, grouped by the join key. This is 
-essentially equivalent to using \sqldistinctcolor to return only distinct values. 
-$\query_6$ is the optimized query using Calcite rules, which is 926x faster than $\query_5$ on a database with 4M rows. $\query_7$ is the query  automatically generated by \slabcity, which is 1833x faster than $\query_5$ on the same database. 
+\head{Example 3. Eliminating a redundant self-join}
+Calcite ships a test suite for its rewrite rules, and $\query_5$ in
+Table~\ref{slab:tab:Q5-Q7} is one of its cases
+(``testPushAggregateThroughOuterJoin14''), over a table \texttt{emp}
+with columns \texttt{(empno,ename,mgr)} and primary key
+\texttt{empno}. $\query_5$ self-joins \texttt{emp} on the
+\texttt{mgr} column and groups by the join key, which amounts to
+selecting distinct values with \sqldistinctcolor. Calcite's own rules
+rewrite $\query_5$ into $\query_6$, pushing the grouping below the
+join to shrink its operands; that yields a 926x speedup on a database
+with 4M rows. \slabcity instead produces $\query_7$, which is 1833x
+faster than $\query_5$ on the same data, because the self-join can be
+removed entirely rather than merely made cheaper. 
 
 
 \begin{table}[!t]
@@ -203,16 +227,18 @@ $\query_7$ is \slabcity's output.}
 \vspace{5pt}
 \end{table}
 
-$\query_6$ is significantly faster than $\query_5$ because pushing $\sqlgroupbycolor$ before the self-join leads to  significantly smaller join operands and thus a more efficient execution; however, this is still not the best rewrite possible. Interestingly, self-join can be eliminated altogether in this case, leading to an even more significant speed-up, which is exactly what \slabcity does by rewriting $\query_5$ into $\query_7$. 
-In fact, this is not limited to Calcite:
-none of the state-of-the-art rule-based query rewriters found this opportunity,\footnote{Similar to Calcite, LearnedRewrite~\cite{LR} was only able to rewrite $\query_5$ into $\query_6$ but did not eliminate the self-join. WeTune was not able to rewrite $\query_5$ at all.} 
-simply because they fail to capture the information that the joined columns may come from the same table and hence be identical --- a fact that could be exploited to eliminate redundancy. 
-Similar to Examples 1 and 2, it is tedious, if not impossible, to create rewrite rules for this type of optimization.
-In particular, identifying self-joins requires semantic information that the two joined operands are essentially the same relation. Even if one wrote a very specific rule for\\
+No state-of-the-art rule-based rewriter finds $\query_7$:
+\learnedrewrite reaches $\query_6$ and stops, and \wetune cannot
+rewrite $\query_5$ at all. Recognizing the opportunity requires the
+semantic fact that the two join operands are the same relation, and
+self-join identity resists syntactic capture. A rule keyed to the
+literal pattern\\
 \texttt{\sqlfromcolor T AS T1 \sqljoincolor T AS T2}\\
-to find self-joins syntactically, they would still miss out on queries expressed as \\
-\texttt{\sqlfromcolor T AS T1 \sqljoincolor (\sqlselectcolor * from T) AS T2} \\ 
-In contrast, because of using query synthesis, $\query_7$ is naturally within \slabcity's search space and \slabcity can successfully find it as a query with minimal redundancy and best performance.
+misses the same join written\\
+\texttt{\sqlfromcolor T AS T1 \sqljoincolor (\sqlselectcolor * from T) AS T2} \\
+and every further disguise needs another pattern. For a search over
+the query space, no recognition is required: the join-free $\query_7$
+is simply a candidate, and it wins on both equivalence and speed.
 
 
 
@@ -279,23 +305,34 @@ $\query_{10}$ is \slabcity's output.}
 
 
 
-\head{Example 4. Optimizating set operations}
-$\query_8$ in Table~\ref{slab:tab:Q8-Q10} is yet another test case (``testPushMinThroughUnion'') from Calcite, 
-which is rewritten to $\query_9$ using Calcite rules, slightly improving its latency ($\pm$2\%) by pushing $\sqlgroupbycolor$ past $\sqlunionallcolor$. 
-On the other hand, \slabcity rewrites $\query_9$ to $\query_{10}$, which is 1.7x faster. 
-
-
-Similar to Example 3, state-of-the-art rule-based rewriters fail to exploit the fact that both sides of $\sqlunionallcolor$ are identical, and thus fail to eliminate the redundant computation. 
-In fact, neither \learnedrewrite nor \wetune were able to optimize $\query_8$ (the former could rewrite it to $\query_9$ whereas the latter was not even able to rewrite it to anything at all).
+\head{Example 4. Deduplicating set operations}
+$\query_8$ in Table~\ref{slab:tab:Q8-Q10} is another Calcite test
+case (``testPushMinThroughUnion''). Calcite's rules rewrite it into
+$\query_9$ by pushing $\sqlgroupbycolor$ past $\sqlunionallcolor$,
+moving latency by only about 2\% in either direction. \slabcity
+rewrites it into $\query_{10}$, which is 1.7x faster, by exploiting
+what the rules cannot see: the two sides of the $\sqlunionallcolor$
+are identical, so the duplicated computation can be eliminated.
+Neither \learnedrewrite (which reaches only $\query_9$) nor \wetune
+(which produces nothing at all) finds this.
 %\barzan{jie, plz go through the whole paper and see how we refer to LR and WT, do we use these acronyms everywhere? If so, let's define them the first timr we reference them and use the same everywehre consistently} \jie{We first use it in example 1 (page 3). I am not sure if I "define" it properly there. Please check}
 Again, because $\slabcity$ uses query synthesis, it is able to find $\query_{10}$ which is both equivalent and faster.
 
 
 \head{Discussion}
-In our evaluation, we have come across many other interesting examples where state-of-the-art query rewriting techniques were not able to optimize the input query or even rewrite it at all, while \slabcity could (see Section~\ref{slab:sec:q1-coverage}).
-Even when they were able to optimize the query, \slabcity's output oftentimes was significantly faster (see Section~\ref{slab:sec:q2-reduction}). 
-Note that in this chapter, we differentiate two terms \emph{optimize} vs. \emph{rewrite}: the former means the technique can rewrite the input query to an output query that is faster, whereas the latter means the technique can rewrite to some query which may or may not be faster. In other words, optimizing is harder than rewriting. 
-Our intention of sharing these motivating examples in Section~\ref{slab:sec:motivating-example} is to demonstrate why it is inherently difficult and error-prone to create enough rules that can handle complex and unseen situations. In contrast, a synthesis-based approach does not need a supply of hard-coded rules and can discover optimization opportunities by searching the SQL language \emph{directly}.
+Two terms are worth fixing, since the evaluation relies on them: a
+technique \emph{rewrites} an input if it produces some equivalent
+output query, and \emph{optimizes} it if the output is actually
+faster; optimizing is the harder task. The examples above were chosen
+because they are legible, but they are not isolated:
+\cref{slab:sec:q1-coverage} reports many queries that current
+rule-based systems cannot optimize, or cannot even rewrite, while
+\slabcity can, and \cref{slab:sec:q2-reduction} shows that even where
+both succeed, \slabcity's outputs are often substantially faster. The
+pattern behind all four examples is the same. Each missed rewrite is
+missed because some human would have had to foresee it as a rule and
+encode its correctness conditions; a search over the query language
+forgoes foresight, and finds what is there.
 
 \begin{comment}
 \barzan{Xinyu, this is why i think its better to not use rewrite and optimize interchangeably. if you agree, plz add the clarification the first time it occurs that optimize means rewriting into a faster query.}

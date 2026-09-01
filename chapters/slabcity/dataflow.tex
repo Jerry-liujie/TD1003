@@ -1,0 +1,428 @@
+\section{The Dataflow Abstraction}
+\label{slab:sec:dataflow}
+\newcounter{mycounter}
+
+The introduction argued that a rule-free search for rewrites needs a
+signal: something computable from the input query alone that
+distinguishes candidates worth examining from the vastly more numerous
+candidates that are not. This section develops that signal. It first
+makes precise the intuition that equivalent queries are related through
+what they compute (\cref{slab:sec:dataflow:insight}), then defines
+dataflows as the formal carrier of that intuition
+(\cref{slab:sec:dataflow:language}), and finally gives a procedure that
+extracts the dataflows of any query in our language
+(\cref{slab:sec:dataflow:extraction}). The next section describes how
+the synthesis algorithm puts the extracted dataflows to work.
+
+\subsection{Dataflows as a Semantic Signal}
+\label{slab:sec:dataflow:insight}
+
+Consider what survives when a query is rewritten. The syntax may change
+beyond recognition: subqueries appear or dissolve, a self-join becomes
+a window function, a \sqlhavingcolor clause becomes a \sqlwherecolor
+over a derived table. What persists is the computation. If the original
+query sums a column and filters on the sum, then any equivalent query
+must, in some guise, still obtain that sum; the result depends on it.
+The essential computations of a query, the ways in which data from the
+input tables is combined, transformed, and compared on the way to the
+output, are properties of the query's meaning, not of its spelling. We
+call each such essential computation a \emph{dataflow}: a path that
+information takes from input tables through the query's operations.
+
+This observation cuts in both directions, and both matter for search.
+In one direction, a candidate query that performs the input query's
+computations is a plausible rewrite: since the input query is correct,
+its dataflows are, by construction, sufficient raw material for
+producing the correct result. In the other direction, a candidate that
+performs computations foreign to the input query is suspect. If the
+input query sums a column, a candidate that only averages it is
+unlikely to produce the same answers; if the two queries filter on
+unrelated columns, equivalence is improbable. Foreign dataflows are
+evidence against equivalence, and a search can use that evidence to
+set such candidates aside.
+
+One asymmetry deserves emphasis: a rewrite need not use \emph{all} of
+the input query's dataflows. Input queries, especially poorly written
+ones, often perform computations their results do not depend on; a
+redundant join is the classic case. A good rewrite discards exactly
+this redundant work, and its dataflows are then a strict subset of the
+input's. The signal we want is therefore one-sided. Sharing the
+input's dataflows is encouraged; exhibiting dataflows the input lacks
+is penalized; failing to use everything the input computes is not
+penalized at all, because that failure is often precisely the
+optimization.
+
+Finally, note what kind of signal this is. Dataflows are semantic:
+they are indifferent to how a computation is written, and in
+particular to how large or how syntactically elaborate a candidate is.
+A search guided by dataflows can therefore rank a structurally
+ambitious candidate above a superficially simple one whenever the
+former better preserves the input's computations. This is what allows
+the approach to find deep restructurings early, rather than only after
+exhausting all syntactically smaller candidates, and it is the
+property that distinguishes dataflow guidance from the size-ordered
+enumeration that is standard in program synthesis.
+
+\subsection{The Dataflow Language}
+\label{slab:sec:dataflow:language}
+
+We now define dataflows formally.
+
+\begin{definition}[Dataflow]
+A dataflow $\dataflowchain$ (defined in Figure~\ref{slab:fig:dataflowlanguage}) for a given query $\query$ is a sequence of SQL operations that are performed during $\query$'s execution on one or more input tables or their columns.
+\end{definition}
+
+The grammar in \cref{slab:fig:dataflowlanguage} builds dataflows from
+the ground up. In the base cases, a dataflow is an input table
+$\dbtable$ or a column of an input table. Base dataflows are
+deliberately anchored to the \emph{input} tables rather than to
+intermediate results: a column alias manufactured halfway through a
+query is an artifact of that query's particular phrasing, and tying
+dataflows to it would make them syntax-dependent, defeating their
+purpose. The recursive cases then record operations applied on top of
+existing dataflows. An aggregate application
+$\emph{agg}(\dataflowchain_1, \mydots, \dataflowchain_n)$ records that
+an aggregate function is computed over the data described by its
+argument dataflows; window functions are recorded analogously. The
+composition $[\dataflowchain_1, \mydots, \dataflowchain_n]$ records
+the assembly of columns into a table, as a \sqlselectcolor clause
+does; because composition captures it, \sqlselectcolor itself needs no
+dedicated construct in the grammar. Comparisons such as $=$ and $\leq$
+are recorded as $\emph{op}(\dataflowchain_1, \dataflowchain_2)$, and
+boolean structure in filtering conditions is recorded by conjunction
+and disjunction of dataflows. Grouping and ordering constructs,
+\sqlgroupbycolor, \sqlorderbycolor, and \sqlpartitionbycolor, are
+recorded directly, since they shape the computation in ways no other
+construct captures.
+
+\begin{figure}[!t]
+\vspace{10pt}
+\footnotesize 
+\centering
+\[
+\arraycolsep=1.5pt\def\arraystretch{1.1}
+\begin{array}{rrll}
+&
+\dataflowchain & 
+\grammareq & 
+\emph{an input table} \ | \ 
+\emph{a column from an input table}  \\ 
+& & \ \ \ | &  
+\agg(\dataflowchain, \mydots, \dataflowchain) \ | \ 
+\windowfunc \ | \ 
+[\dataflowchain, \mydots, \dataflowchain] \ | \ 
+\emph{op}(\dataflowchain, \dataflowchain) \ | \ 
+\dataflowchain \land \dataflowchain \ | \ 
+\dataflowchain \lor \dataflowchain \\ 
+& & \ \ \ | &  
+\sqlpartitionby(\dataflowchain) \ | \ 
+\sqlorderby(\dataflowchain) \ | \ 
+\sqlgroupby(\dataflowchain) \\ 
+\end{array}
+\]
+\vspace{-12pt}
+\caption{Dataflow language.}
+\label{slab:fig:dataflowlanguage}
+\vspace{-12pt}
+\end{figure}
+
+\begin{example}
+Recall $\query_1$ from Table~\ref{slab:tab:Q1-Q2}, the human-written
+query that, for each gender, computes a running total of scores by
+day. Among the dataflows $\query_1$ manifests are:
+$$
+\small
+ \left \{
+\text{\texttt{scores.score}, \sqlsumcolor(\texttt{scores.score}), $\texttt{scores.day} \leq \texttt{scores.day}$, $\sqlgroupbycolor \ \texttt{scores.gender}$, $\dotsb$ }
+\right \}
+$$
+Reading them off: $\query_1$ draws data from the \texttt{score} column
+of the \texttt{scores} table; it sums that column; an intermediate
+step compares \texttt{day} values against each other; and it groups by
+gender. Now consider $\query_2$ from the same table, the rewrite that
+replaces $\query_1$'s self-join with a window function. Syntactically
+the two queries share almost nothing, yet the essential computations
+recur: $\query_2$ also draws on \texttt{scores.score}, also sums it,
+and it organizes the computation around gender and day through its
+\sqlpartitionbycolor and \sqlorderbycolor, constructs that differ from
+$\query_1$'s \sqlgroupbycolor and day comparison in form but not in
+role. Making this last correspondence precise requires one more
+ingredient, alternative dataflows, introduced in
+\cref{slab:sec:dataflow:extraction}; with it in place, the relation
+between $\query_1$ and $\query_2$ lives entirely at the level of
+dataflows, which is exactly the level at which a search can exploit
+it.
+\end{example}
+
+\subsection{Extracting Dataflows}
+\label{slab:sec:dataflow:extraction}
+
+For dataflows to guide a search they must be computable, and cheaply,
+since the search will consult them constantly. This subsection gives a
+syntax-directed extraction procedure that computes the full set of
+dataflows a query manifests in a single traversal of its structure.
+
+The procedure is presented in \cref{slab:fig:dataflowextraction} as a
+set of inference rules over judgments of the form
+\[\centering
+\calcalldataflowchains{\query_{\emph{ctx}}}{(\program)}{ \dataflowset }
+\]
+read: given the context $\query_{\emph{ctx}}$ in which the program
+fragment $\program$ occurs, $\dataflowset$ is the set of all dataflows
+manifested in $\program$. The fragment $\program$ ranges over whole
+queries, filtering conditions, target lists, and expressions. The
+context is what lets extraction see through a query's local
+vocabulary: when $\program$ is, say, a target list,
+$\query_{\emph{ctx}}$ is the query producing the table that
+$\program$'s columns refer to, and the rules use it to chase every
+column reference back to the input tables it ultimately draws from.
+
+Two mutually recursive functions share the work. $\textsc{AllDfs}$
+computes, for a fragment, the set of \emph{all} dataflows appearing
+anywhere within it, components included. $\textsc{Df}$ computes the
+\emph{single} dataflow denoted by the fragment itself, ignoring its
+components. The distinction is what lets the rules record both facts
+about a compound condition such as a disjunction: that each disjunct's
+computations occur (via $\textsc{AllDfs}$), and that the disjunction
+itself combines them (via $\textsc{Df}$).
+
+Walking through the rules of \cref{slab:fig:dataflowextraction}: rule
+(1) is the base case, extracting from a query that is just an input
+table $\dbtable$ the singleton set containing $\dbtable$. Rules (2)
+and (3) handle selection and join. Both take the union of the dataflow
+sets of their constituents: for a selection, the source query, the
+filtering condition, and the target list; for a join, the two sides
+and the join condition. Neither construct mints a dataflow of its own;
+selection is captured through composition, and the join logic is
+carried by the join condition's dataflows. Rules (4) and (5) extract
+from conditions. For a boolean combination, rule (4) collects all
+dataflows of each operand condition and adds the dataflow of the
+combination itself, obtained by applying the boolean operator to the
+operands' $\textsc{Df}$ results; rule (5) does the corresponding work
+for an atomic comparison over expressions. Rules (6) and (7) define
+$\textsc{Df}$ on conditions, composing the operand dataflows under the
+logical or comparison operator. Rules (8) through (13) ground
+everything in expressions: a constant denotes itself (8); a column
+$\col$ of an input table denotes the base dataflow $\dbtable.\col$
+(9); a column reached through a join is resolved by recursing into
+whichever side it comes from (10); a column reached through a
+selection is resolved by locating its defining target in the target
+list and recursing on that target (11); and aggregate applications
+wrap the dataflows of their argument columns (12, 13).
+
+\begin{figure*}[!t]
+\footnotesize 
+\resetmycounter{mycounter}
+% NOTE (dissertation): content was sized for acmart's full page width; scaled to fit.
+\begin{center}\resizebox{\textwidth}{!}{$\displaystyle
+\arraycolsep=.5pt\def\arraystretch{1.1}
+\begin{array}{l}
+% first block 
+\begin{array}{lll}
+\fbox{\textsc{AllDfs} \text{algorithm that extracts all dataflows for queries}}
+\\[5pt]
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\dbtable \text{ is an input table}
+}{
+\calcalldataflowchains{}{(\dbtable)}{ \{ \dbtable \} }
+}
+\end{array}
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\calcalldataflowchains{}{(\query)}{\dataflowset_1}  \ \ \ \ 
+\calcalldataflowchains{\query}{(\sqlpredicate)}{\dataflowset_2} \ \ \ \ 
+\calcalldataflowchains{\query}{(\targetlist)}{\dataflowset_3}
+}{
+\calcalldataflowchains{}{(\sqlselect \sqlspace \targetlist \sqlspace \sqlfrom \sqlspace \query \sqlspace \sqlwhere \sqlspace \sqlpredicate)}{\dataflowset_1 \cup \dataflowset_2 \cup \dataflowset_3}
+}
+\end{array}
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\calcalldataflowchains{}{(\query_1)}{\dataflowset_1} \ \ \ \ 
+\calcalldataflowchains{}{(\query_2)}{\dataflowset_2} \ \ \ \ 
+\calcalldataflowchains{\query_1 \sqlspace \sqljoin \sqlspace \query_2}{(\sqlpredicate)}{\dataflowset_3}
+}{
+\calcalldataflowchains{}{(\query_1 \sqlspace \sqljoin \sqlspace \query_2 \sqlspace \sqlon \sqlspace \sqlpredicate)}{ \dataflowset_1 \cup \dataflowset_2 \cup \dataflowset_3 } 
+}
+\end{array}
+\end{array}
+\\ \\ 
+% second block 
+\begin{array}{l}
+\begin{array}{lll}
+\fbox{\textsc{AllDfs} \text{algorithm that extracts all dataflows for conditions}}
+\\[5pt]
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\calcalldataflowchains{\query}{(\sqlpredicate_i)}{\dataflowset_i} \ \ \ \ 
+\calcdataflowchain{\query}{(\sqlpredicate_i)}{\dataflowchain_i} 
+}{
+\calcalldataflowchains{\query}{(\sqlpredicate_1 \ \emph{lop} \ \sqlpredicate_2)}{\dataflowset_1 \cup \dataflowset_2 \cup \{\emph{lop}(\dataflowchain_1, \dataflowchain_2) \}}
+}
+\end{array}
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\calcalldataflowchains{\query}{(\sqlexpr_i)}{\dataflowset_i} \ \ \ \ 
+\calcdataflowchain{\query}{(\sqlexpr_i)}{\dataflowchain_i} 
+}{
+\calcalldataflowchains{\query}{(\sqlexpr_1 \emph{ op } \sqlexpr_2)}{\dataflowset_1 \cup \dataflowset_2 \cup \{ \emph{op}(\dataflowchain_1 , \dataflowchain_2) \}}
+}
+\end{array}
+\\ \\ 
+\fbox{\textsc{Df} \text{algorithm that extracts dataflows for conditions, expressions and targets}}
+\\[5pt]
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\calcdataflowchain{\query}{(\sqlpredicate_i)}{\dataflowchain_i}
+}{
+\calcdataflowchain{\query}{(\sqlpredicate_1 \ \emph{lop} \  \sqlpredicate_2)}{ \emph{lop}(\dataflowchain_1, \dataflowchain_2) }
+}
+\end{array}
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\calcdataflowchain{\query}{(\sqlexpr_i)}{\dataflowchain_i}
+}{
+\calcdataflowchain{\query}{(\sqlexpr_1 \emph{ op } \sqlexpr_2)}{ \emph{op}(\dataflowchain_1 , \dataflowchain_2)  }
+}
+\end{array}
+\begin{array}{cc}
+\vspace{-5pt}
+(\showmycounter{mycounter}) & 
+\irule{
+}{
+\calcdataflowchain{\query}{(\emph{const})}{\emph{const}}
+}
+\end{array}
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\dbtable \text{ is an input table}
+}{
+\calcdataflowchain{\dbtable}{(\col)}{{T.}\col}
+}
+\end{array}
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\col \in \textsc{Columns}(\query_i) \ \ \ \ 
+%\col \not\in \textsc{Columns}(\query_{2-i}) \ \ \ \ 
+\calcdataflowchain{\query_i}{(\col)}{\dataflowchain_i}
+}{
+\calcdataflowchain{\query_1 \sqlspace \sqljoin \sqlspace \query_2 \sqlspace \sqlon \sqlspace \sqlpredicate}{(\col)}{ \dataflowchain_i } 
+}
+\end{array}
+\\ \\ 
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+(\target \sqlspace \sqlas \sqlspace \col) \in \targetlist \ \ \ \ 
+\calcdataflowchain{\query}{(\target)}{\dataflowchain}
+}{
+\calcdataflowchain{\sqlselect \sqlspace \targetlist \sqlspace \sqlfrom \sqlspace \query \sqlspace \sqlwhere \sqlspace \sqlpredicate}{(\col)}{ \dataflowchain } 
+}
+\end{array}
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\calcdataflowchain{\query}{(\col)}{\dataflowchain}
+}{
+\calcdataflowchain{\query}{(\agg(\col))}{\agg(\dataflowchain)}
+}
+\end{array}
+\begin{array}{cc}
+(\showmycounter{mycounter}) & 
+\irule{
+\calcdataflowchain{\query}{(\col)}{\dataflowchain} 
+}{
+\calcdataflowchain{\query}{\big( \agg(\col) \sqlspace \sqlover( \sqlpartitionby \sqlspace \cols_1 \sqlspace \sqlorderby \sqlspace \cols_2 ) \big)}{ \agg(\dataflowchain) } 
+}
+\end{array}
+
+\end{array}
+\end{array}
+\end{array}
+$}\end{center}
+\vspace{-10pt}
+\caption{Inference rules that explain how dataflow extraction works for some key constructs in our query language.}
+\label{slab:fig:dataflowextraction}
+\vspace{-5pt}
+\end{figure*}
+
+\begin{example}
+Consider the comparison
+$$
+\text{\texttt{s2.day <= s1.day}}
+$$
+inside $\query_1$ from Table~\ref{slab:tab:Q1-Q2}, where \texttt{s1}
+and \texttt{s2} both alias the \texttt{scores} table. Extraction
+produces the union of three sets: the dataflows of the left argument,
+$\{\texttt{scores.day}\}$; the dataflows of the right argument,
+likewise $\{\texttt{scores.day}\}$; and, from the comparison itself,
+$\{\texttt{scores.day} \leq \texttt{scores.day}\}$. Note how the
+context resolved both aliases to the same underlying input column: the
+extracted dataflows say, in a syntax-independent way, that $\query_1$
+reads \texttt{day} values and compares \texttt{day} values against
+each other.
+\end{example}
+
+\head{Alternative dataflows}
+The dataflow language, as presented so far, records operations in the
+form the query expresses them, and this is occasionally too literal.
+SQL offers distinct constructs with the same underlying semantics: a
+comparison $\dataflowchain_1 \leq \dataflowchain_2$ and an ordering
+$\sqlorderbycolor$ over the compared dataflows both express that the
+computation is sensitive to the order of those values, and
+$\sqlgroupbycolor \ \dataflowchain$ and $\sqlpartitionbycolor \
+\dataflowchain$ both express grouping by $\dataflowchain$, differing
+only in whether the groups are collapsed or kept. Two queries that
+make opposite choices among such constructs perform the same essential
+computation while manifesting literally different dataflow terms;
+$\query_1$ and $\query_2$ from the running example are exactly such a
+pair. We therefore define pairs of dataflow forms with shared
+semantics to be \emph{alternatives} of one another; the ordering and
+grouping pairs above are two such families, and our implementation
+recognizes further families of the same character. When extracting the
+dataflow set of the input query, the set is closed under alternatives:
+whenever a dataflow is extracted, its alternative forms are added
+alongside it. The closure is applied to the input query's set only.
+Its purpose is to prevent a candidate from being treated as foreign
+merely for expressing the input's computation through a semantically
+equal construct; candidates' own sets are left literal, so the closure
+widens what counts as shared without manufacturing shared dataflows
+out of nothing. With the closure in place, $\query_2$'s
+$\sqlpartitionbycolor \ \texttt{scores.gender}$ registers as shared
+with $\query_1$'s $\sqlgroupbycolor \ \texttt{scores.gender}$, and its
+$\sqlorderbycolor \ \texttt{scores.day}$ as shared with $\query_1$'s
+day comparison, so the two queries' kinship is fully visible to the
+abstraction. Like the monotonicity observation below, the notion of
+alternative dataflows was developed jointly with Rui Dong.
+
+\head{A compositionality property}
+The extraction rules only ever accumulate: the dataflow set of a
+fragment always contains the dataflow sets of its components.
+Consequently, whenever programs $\program_1, \mydots, \program_n$ are
+composed into a larger program $\program$, the dataflow set of
+$\program$ includes each component's set. This monotonicity is a
+property of the abstraction itself, and the next section shows it is
+what makes dataflows compatible with search: it guarantees that the
+guidance signal degrades predictably as candidate programs grow, which
+the synthesis algorithm exploits to prune entire regions of the space
+at once. The observation that extraction is monotonic, and that this
+enables efficient search, was made jointly with Rui Dong.
+
+Dataflows, then, are precisely what the introduction asked for: a
+semantic characterization of a query, mechanically computable from the
+query alone, under which equivalent formulations are visibly related
+and foreign computations are visibly foreign. What remains is to turn
+this characterization into an engine, a way of steering an enumerative
+synthesizer by how a candidate's dataflows relate to the input's. That
+machinery, the contribution of Rui Dong, is the subject of the next
+section.
