@@ -4,5 +4,12 @@
 
 Explicit SQL pipeline DAGs create an optimization setting that is richer than traditional one-query-at-a-time rewriting. Once dependencies, downstream demand, final outputs, materialization choices, and refresh behavior are visible, the optimizer can restructure the pipeline itself rather than merely improve individual statements. \dagsmith is a step toward that goal: it treats dependency-aware pipeline optimization as a joint problem over graph structure, materialization, and frequency, and combines structural analysis with LLM-guided refactoring and verification to explore that space.
 
+With \dagsmith, the dissertation's technical arc is complete: from
+rule-free search over single queries, to learned rewriting knowledge,
+to optimization of the pipeline as a whole. The remaining chapters
+step back from the individual systems: \cref{chap:related} situates
+all three against prior work, \cref{chap:future} charts the
+directions they open, and \cref{chap:conclusion} concludes.
+
 % The core claim is that recurring SQL pipeline DAGs expose whole-pipeline optimization opportunities that are invisible to query-local rewriting, and exploiting them requires a system designed for dependency-aware reasoning.
 % \linc{I actually think we can remove this last paragraph if we're short on space. It's a bit redundant.}
