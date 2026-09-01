@@ -1,26 +1,223 @@
 %===================================================================
 % Chapter 6: Related Work
-%
-% Consolidated from the related-work sections of the three papers,
-% per committee feedback. Current state: SHELL. The three sections
-% below are the (retitled) paper sections included largely as-is;
-% a later revision pass will deduplicate overlapping coverage
-% (query rewriting, synthesis, LLMs-for-databases) and rewrite the
-% chapter as a single thematic survey.
+% Consolidated thematic survey across the three systems.
 %===================================================================
 \chapter{Related Work}
 \label{chap:related}
 
-% TODO(revision): replace this placeholder introduction once the
-% sections below are consolidated thematically.
-This chapter surveys the work most closely related to this
-dissertation. The three systems presented in
-Chapters~\ref{slab:chap}--\ref{dag:chap} draw on, and depart from,
-several bodies of prior work: rule-based and synthesis-based query
-rewriting, applications of large language models to database tasks,
-and the optimization of multi-query SQL pipelines. We organize the
-discussion around these themes.
+The three systems of this dissertation draw on, and depart from,
+several bodies of prior work. Rather than surveying them
+system-by-system, this chapter organizes the discussion by theme:
+rule-based query rewriting, the departure point for the entire
+dissertation (\cref{sec:related:rules}); the small body of work that,
+like Chapters 3 and 4, rewrites queries without being confined to
+rules (\cref{sec:related:beyondrules}); the techniques for
+establishing query equivalence that every rewriter in this
+dissertation depends on (\cref{sec:related:equiv}); the broader uses
+of program synthesis in data systems, and the provenance literature
+adjacent to Chapter 3's dataflow abstraction
+(\cref{sec:related:synthesis}); the rapidly growing application of
+large language models across the database stack
+(\cref{sec:related:llms}); and the techniques that, like Chapter 5,
+look beyond a single query (\cref{sec:related:pipelines}).
 
-\input{chapters/slabcity/related}
-\input{chapters/genrewrite/sections/7_related}
-\input{chapters/dagsmith/sections/5_related}
+\section{Rule-Based Query Rewriting}
+\label{sec:related:rules}
+\label{slab:sec:related}
+
+The dominant tradition in query rewriting encodes optimization
+knowledge as rewrite rules, and its history is one of steadily
+widening sources for those rules. The classical source is human
+expertise: rule sets crafted and refined by database experts over
+decades~\cite{dintyala2020sqlcheck,lohman1988grammar,finance1991rule,pirahesh1992extensible,chen2016memsql,begoli2018apache,graefe1987rule,ahmed2006cost,levy1994query,muralikrishna1992improved,seshadri1996cost}.
+Such collections grow slowly, and each rule must anticipate a pattern
+and encode its correctness conditions by hand. Automatic rule
+discovery lightens the authoring burden: \wetune~\cite{wetune}
+enumerates and verifies new rules mechanically, though over a
+restricted space of simple query shapes, and subsequent systems
+propose rules tailored to analytical
+workloads~\cite{sarthi2020generalized,blitz2,modi2021new,bruno2022computation}.
+Orthogonally, learned techniques improve how a fixed rule set is
+applied: \learnedrewrite~\cite{LR} uses Monte Carlo tree search with
+learned cost models to choose the order in which Calcite's rules fire.
+A separate line exploits integrity constraints through rules, using
+key and \texttt{NOT NULL} constraints to eliminate
+joins~\cite{join-elimination}, optimize queries with
+disjunction~\cite{blog-disjunct}, or remove unnecessary
+\sqldistinctcolor~\cite{habimana2015query}, among
+others~\cite{presto-qo,db2-qo}; these constraint-driven rewrites
+remain pattern-matched and limited to relatively simple constraint
+forms, where the synthesis of \cref{slab:chap} can exploit richer
+integrity constraints freely during search. Most recently, large
+language models have been enlisted in service of rules:
+\rbot~\cite{sun2024r} combines retrieval and self-reflection to apply
+rules well, and \textsc{LLM-R\textsuperscript{2}}~\cite{li2024llm}
+uses contrastive demonstrations to select effective rules from a given
+set.
+
+However their rules are obtained, ordered, or selected, all of these
+systems share the boundary this dissertation set out from: they cannot
+optimize a query whose opportunity matches none of their rules.
+\Cref{slab:chap} demonstrated this boundary empirically, on queries no
+state-of-the-art rule-based system could improve.
+
+\section{Query Rewriting Beyond Rules}
+\label{sec:related:beyondrules}
+\label{gen:sec:related}
+
+Before this dissertation, two systems had applied program synthesis to
+source-to-source query rewriting, and each kept rules or locality in
+the loop. FGH-rule~\cite{wang2022optimizing} operates on Datalog: a
+rule matches a recursion pattern in the input query and produces an
+output template with an unknown expression, which synthesis then fills
+so that the completed query is equivalent to the input. The rule
+delimits the synthesis search space, so the approach's reach is the
+rule's reach, and its formal guarantees have been demonstrated at
+small scale (seven queries). \sia~\cite{zhou2021sia} uses synthesis to
+add predicates to a query, but only within the \sqlwherecolor clause;
+it cannot restructure the rest of the query. \slabcity
+(\cref{slab:chap}) is, to the best of our knowledge, the first
+synthesis-based rewriter that is capable of whole-query optimization
+and needs no rewrite rules at all.
+
+The same ambition, rewriting beyond what rules capture, has since been
+pursued with language models used directly rather than in service of a
+rule set. LITHE~\cite{llm-rw2} prompts the model with one of six
+handcrafted natural-language rules, each accompanied by an example;
+the rule set is fixed, so the system's knowledge cannot grow with
+database feedback. QUITE~\cite{song2025quite} casts rewriting as a
+Markov decision process whose refinement actions are drawn from a
+curated knowledge base of documented heuristics, which confines the
+search to known actions. \genrewrite (\cref{gen:chap}) differs from
+both in kind: its Natural Language Rewrite Rules are not fixed or
+curated in advance but distilled by the model from its own successful
+rewrites, so the repository grows over the life of a workload and can
+contain strategies present in no existing literature. These systems,
+along with \rbot and \textsc{LLM-R\textsuperscript{2}} above, were
+published after \genrewrite's initial arXiv
+release~\cite{genrewrite-report}.
+
+\section{Checking Query Equivalence}
+\label{sec:related:equiv}
+
+Every rewriter in this dissertation admits a candidate rewrite only
+after evidence of equivalence, and the available evidence spans the
+spectrum Chapter~2 laid out. On the verification end,
+\cosette~\cite{chu2017cosette} constructs mechanized proofs of
+equivalence with a proof assistant, or counterexamples for
+inequivalent pairs; EQUITAS and
+\spes~\cite{zhou2019automated,zhou2022spes} execute queries
+symbolically and discharge the resulting formulas with an SMT solver,
+covering select-project-join queries and some outer joins and
+aggregates. \Cref{slab:chap} consumes these verifiers as its final
+checking layers, and their partial language coverage is exactly why
+its checker is layered rather than monolithic.
+
+On the testing end, mutation-based techniques from the software
+engineering literature generate databases to kill query
+mutants~\cite{chandra2015data,shah2011generating}, driven by
+hard-coded constraint rules or specifications, over query languages
+too small for the workloads in this dissertation.
+EvoSQL~\cite{castelein2018search} searches for test databases offline,
+guided by a predicate coverage metric~\cite{tuya2010full}, at a cost
+of minutes per query that no synthesis loop can afford.
+RATest~\cite{miao2019explaining} finds minimal distinguishing
+databases via a provenance-based algorithm, but is expensive and
+supports a limited language. The tester of \cref{slab:chap} differs
+from all of these in being domain-specialized and online: it mines the
+candidate and input queries for the specific patterns that commonly
+make rewrites wrong, and turns those patterns into distinguishing
+databases fast enough to sit inside a CEGIS loop. Most recently,
+LLM-SQL-Solver~\cite{zhao2023llm} asks a language model to judge
+equivalence directly, under a pragmatically relaxed notion of
+equivalence; such judgments are useful signals but carry no guarantee,
+which is why \cref{gen:chap} treats the model's own equivalence
+opinion as a starting point to be checked, not a verdict.
+
+\section{Program Synthesis and Provenance in Data Systems}
+\label{sec:related:synthesis}
+
+Beyond rewriting, program synthesis has served data systems in several
+roles. Blitz~\cite{synthesis-spark,blitz2} synthesizes user-defined
+operators from Spark programs to improve parallel execution;
+Chestnut~\cite{chestnut} synthesizes a data layout together with a
+query plan over that layout; both target non-relational settings
+rather than optimizing core SQL queries.
+\textsc{Sickle}~\cite{zhou2022synthesizing} and
+Scythe~\cite{wang2017synthesizing} synthesize analytical queries from
+input-output examples, easing the user's burden rather than the
+query's cost. Synthesis has also been used to generate diverse test
+databases for database
+applications~\cite{qex,tesma,syndb,xie:symbolic2}, where the goal is
+application code coverage.
+
+A reader may also wonder how the dataflow abstraction of
+\cref{slab:chap} relates to data provenance, a concept it
+superficially resembles. Provenance is studied across probabilistic
+databases~\cite{green2006models,suciu2011probabilistic}, view
+maintenance~\cite{buneman2002propagation}, and the explanation of
+query results~\cite{green2007provenance,chapman2009not}, and has more
+recently guided synthesis from
+examples~\cite{raghothaman2020provenance,zhou2022synthesizing}. The
+difference is granularity and purpose: provenance accounts for where
+every individual piece of data originates and how it is computed,
+while a dataflow records only the column-level movement of information
+through a query's operations. That coarseness is the point: dataflows
+are cheap enough to extract and compare inside a search loop, yet
+informative enough to steer it.
+
+\section{Large Language Models in Databases}
+\label{sec:related:llms}
+
+The systems of Chapters 4 and 5 sit within a rapid broadening of LLM
+applications across the database stack. Language models now drive
+NL2SQL with strong benchmark results~\cite{li2023can}; infer column
+correspondences for schema matching~\cite{parciak2407schema};
+synthesize data for augmentation~\cite{tian2025text}; tune and
+diagnose systems, as in DB-BERT and
+D-Bot~\cite{trummer2022db,zhou2023d}; and integrate more broadly with
+DBMS internals for optimization and indexing in
+DB-GPT~\cite{zhou2023dbgpt}. Collectively, these works position LLMs
+as versatile assistants across the stack. What distinguishes this
+dissertation's use of them is the discipline built around the model:
+\cref{gen:chap} surrounds it with accumulated rewrite knowledge,
+correction loops, and verification, and \cref{dag:chap} with
+structural analysis, separated criticism, and data-backed checking, so
+that in both cases the model proposes and the system disposes.
+
+\section{Optimizing Beyond the Single Query}
+\label{sec:related:pipelines}
+\label{dag:sec:related}
+
+\Cref{dag:chap} is, to the best of our knowledge, the first system to
+treat an explicit pipeline DAG as the unit of dependency-aware
+rewriting, restructuring node boundaries and deciding refactoring,
+materialization, and refresh frequency jointly. Four established lines
+each cover part of that territory. Single-query rewriting, in all
+three flavors this dissertation has discussed, and including
+Chapters 3 and 4 themselves, transforms one statement and leaves the
+surrounding dependency graph untouched. Multi-query
+optimization~\cite{sellis1988multiple,roy2000efficient} and
+common-subexpression sharing~\cite{scopeCSE,similarSubexpr} reuse
+intermediate results across a batch of statements, and
+materialized-view
+selection~\cite{agrawal2000automated,harinarayan1996implementing}
+precomputes chosen results and redirects consumers to them; these
+techniques match on syntactic structure and choose persistence among
+results that already exist, without recognizing the same computation
+written in dissimilar SQL or trimming results no downstream output
+needs. Incremental view maintenance~\cite{ivm} and streaming
+materialized-view systems~\cite{materialize,risingwave} cheapen each
+refresh by processing only the rows that change; \cref{dag:chap}
+approaches freshness from the opposite direction, aligning how often
+each node runs with how often its inputs change and its outputs are
+consumed, and the two directions are complementary and could compose.
+Finally, workflow orchestrators, including dbt~\cite{dbtWhatExactly},
+SQLMesh~\cite{sqlmeshOverview}, Airflow~\cite{airflowDags},
+Dagster~\cite{dagsterAssets}, Prefect~\cite{prefectTasks},
+Argo~\cite{argoDag}, Luigi~\cite{luigiDocs}, and Databricks
+Workflows~\cite{databricksJobs}, express exactly the DAGs
+\cref{dag:chap} targets, but their schedulers optimize execution
+order, invalidation, retries, and resource allocation while leaving
+each node's SQL semantics untouched, which is where \cref{dag:chap}'s
+reductions originate.
