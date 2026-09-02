@@ -109,10 +109,15 @@ checks the rewrites for equivalence and performance and updates the
 benefit scores of the NLR2s that were used. Iterations continue until
 no additional improvement is found and the set of rewrites stabilizes.
 The rewrites then go through a final verification step
-{\small \Circled{4}}: where the formal verifier cannot guarantee
-equivalence automatically, a human expert inspects and confirms the
-rewritten query's equivalence, aided by its explanation, before it is
-deployed to production.
+{\small \Circled{4}}, whose disposition depends on the deployment
+mode. In development mode, where coverage matters most, a human expert
+inspects and confirms the rewrites that the formal verifier cannot
+certify automatically, aided by their explanations, so that as many
+beneficial rewrites as possible are adopted. In production mode, where
+the system must respond quickly and without a human in the loop,
+rewrites that cannot be verified automatically are simply dropped:
+only candidates that pass the automated correctness gate are
+deployed.
 
 \genhead{Target workloads}
 The economics govern the scope. Model invocations and occasional human

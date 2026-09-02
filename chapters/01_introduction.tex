@@ -250,15 +250,18 @@ can deliver alone.
 In summary, this dissertation makes the following contributions.
 
 Chapter~3 presents SlabCity, the first synthesis-based technique for
-whole-query SQL optimization that requires no rewrite rules. It
-introduces query dataflows and a dataflow-driven scoring function that
-make rule-free search practical, together with layered equivalence
-checking that combines testing with bounded and full formal
-verification. Evaluated on four workloads, including a newly curated
-benchmark of more than 1,000 real-life queries, SlabCity optimizes more
-queries than state-of-the-art rule-based rewriters, discovers rewrites
-that no composition of their rules can express, and produces rewrites
-that are often several times faster than the original queries.
+whole-query SQL optimization that requires no rewrite rules. The
+author's contribution is the query-dataflow abstraction: its
+definition, its extraction from SQL, and the observation that related
+queries can be connected through shared dataflows. Rui Dong developed
+the dataflow-driven scoring function and search algorithm that make
+rule-free synthesis efficient. The system's layered equivalence
+checking and its evaluation on four workloads were collaborative
+efforts, as was the curation of a benchmark of more than 1{,}000
+real-life queries released with the system. SlabCity optimizes more queries than state-of-the-art
+rule-based rewriters, discovers rewrites that no composition of their
+rules can express, and produces rewrites that are often several times
+faster than the original queries.
 
 Chapter~4 presents GenRewrite, the first holistic system for query
 rewriting with large language models. It introduces Natural Language

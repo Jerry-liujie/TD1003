@@ -5,12 +5,12 @@ We evaluate \dagsmith{} on real dbt projects, organized around three questions:
 \begin{enumerate}
     \item How does \dagsmith{} compare to existing baselines for SQL pipeline optimization, and what classes of optimization account for the gap?
     \item How much does each component of \dagsmith{}'s architecture contribute to the overall gain? We ablate the three  implementation dimensions  (refactoring, materialization, and frequency) and the dataflow-driven targeting that feeds the LLM stage.
-    \item Is the underlying machinery sound and affordable? We measure  the effectiveness of the equivalence-verification loop at catching unsafe rewrites, the LLM cost of running the system end-to-end, and the accuracy of the cost model that drives materialization decisions.
+    \item Is the underlying machinery effective and affordable? We measure the equivalence-verification loop's ability to catch the unsafe rewrites observed in our evaluation, the LLM cost of running the system end-to-end, and the accuracy of the cost model that drives materialization decisions.
 \end{enumerate}
 
 \head{Summary of results}
 On the open-source Tuva and Stripe dbt projects, \dagsmith{} reduces BigQuery slot-time, the unit billed under capacity pricing, by 51.1\% and 47.4\% to build the pipeline once, and by 67.7\% and 54.8\% in recurring cost averaged across three representative refresh schedules per project. Both figures beat the strongest baseline by a wide margin (on Tuva, 67.7\% against its 37.9\% recurring-cost reduction), because \dagsmith{} reaches cross-model refactoring, materialization revision, and frequency-aware rescheduling that single-query and syntactic cross-model rewriters cannot. An ablation confirms the three  implementation dimensions are complementary, and that dataflow-guided targeting spends a fixed LLM budget more effectively than random subgraph selection (51.1\% vs.\ 43.1\% single-run). 
-The supporting machinery is sound and affordable (Section 4.4): the verification loop reliably rejects unsafe rewrites, the LLM cost is paid once and amortized over many runs, and the learned cost model is accurate enough for the decisions it drives.
+The supporting machinery is effective and affordable (\cref{dag:sec:eval-system}): the verification loop catches the unsafe rewrites observed in our evaluation, the LLM cost is paid once and amortized over many runs, and the learned cost model is accurate enough for the decisions it drives.
 
 
 
@@ -331,12 +331,12 @@ Dataflow-guided (\dagsmith{})  & $\mathbf{51.1}$ & $\mathbf{67.7}$ \\
 \subsection{System Characterization}
 \label{dag:sec:eval-system}
 
-This subsection asks whether the machinery behind the gains is sound and affordable: the equivalence-verification loop that catches unsafe rewrites, the LLM cost of running \dagsmith{} end to end, and the accuracy of the learned cost model that drives materialization.
+This subsection characterizes the machinery behind the gains: the equivalence-verification loop as evaluated on the unsafe rewrites observed in our experiments, the LLM cost of running \dagsmith{} end to end, and the accuracy of the learned cost model that drives materialization.
 
 \subsubsection{Equivalence-Verification Effectiveness}
 \label{dag:sec:eval-verification}
 
-The question for the verification loop (\S\ref{dag:sec:llm-refactoring}) is whether it catches unsafe rewrites without discarding safe ones, under a budget of three correction attempts per subgraph. Of the 20 candidate subgraphs on Tuva, 12 fit within the size cap and reach verification (Table~\ref{dag:tab:verification}). Only a quarter pass on the first attempt, and the rewrites the diagnostics reject fall into two recurring patterns a per-query checker cannot detect. The dominant one is a grain collapse: the rewrite reads a value from a pre-deduplicated sibling that keeps one row per key, silently dropping the secondary rows the original aggregates over (Figure~\ref{dag:fig:critic-catch}). The second is algorithm substitution: a cheaper algorithm whose output differs from the original, such as a window-based interval merge that yields different groupings than the pairwise merge it replaces. Yet none of the 12 exhausts the budget: every rejected subgraph passes within a second attempt once its violated invariants are returned to the rewriter, so the loop is a gate rather than a dead end. On Stripe most candidates pass on the first attempt, since its smaller DAG and simpler SQL leave the rewrites less error-prone.
+We evaluate how the verification loop (\S\ref{dag:sec:llm-refactoring}) handles the unsafe rewrites observed among the candidate subgraphs, under a budget of three correction attempts per subgraph. Of the 20 candidate subgraphs on Tuva, 12 fit within the size cap and reach verification (Table~\ref{dag:tab:verification}). Only a quarter pass on the first attempt, and the rewrites the diagnostics reject fall into two recurring patterns a per-query checker cannot detect. The dominant one is a grain collapse: the rewrite reads a value from a pre-deduplicated sibling that keeps one row per key, silently dropping the secondary rows the original aggregates over (Figure~\ref{dag:fig:critic-catch}). The second is algorithm substitution: a cheaper algorithm whose output differs from the original, such as a window-based interval merge that yields different groupings than the pairwise merge it replaces. Yet none of the 12 exhausts the budget: every rejected subgraph passes within a second attempt once its violated invariants are returned to the rewriter, so the loop is a gate rather than a dead end. On Stripe most candidates pass on the first attempt, since its smaller DAG and simpler SQL leave the rewrites less error-prone.
 
 \begin{table}[tb]
 \centering

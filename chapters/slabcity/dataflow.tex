@@ -130,12 +130,13 @@ construct captures.
 Recall $\query_1$ from Table~\ref{slab:tab:Q1-Q2}, the human-written
 query that, for each gender, computes a running total of scores by
 day. Among the dataflows $\query_1$ manifests are:
-$$
-\small
+{\small
+\[
  \left \{
 \text{\texttt{scores.score}, \sqlsumcolor(\texttt{scores.score}), $\texttt{scores.day} \leq \texttt{scores.day}$, $\sqlgroupbycolor \ \texttt{scores.gender}$, $\dotsb$ }
 \right \}
-$$
+\]
+}
 Reading them off: $\query_1$ draws data from the \texttt{score} column
 of the \texttt{scores} table; it sums that column; an intermediate
 step compares \texttt{day} values against each other; and it groups by
@@ -376,26 +377,29 @@ each other.
 \head{Alternative dataflows}
 The dataflow language, as presented so far, records operations in the
 form the query expresses them, and this is occasionally too literal.
-SQL offers distinct constructs with the same underlying semantics: a
-comparison $\dataflowchain_1 \leq \dataflowchain_2$ and an ordering
-$\sqlorderbycolor$ over the compared dataflows both express that the
-computation is sensitive to the order of those values, and
-$\sqlgroupbycolor \ \dataflowchain$ and $\sqlpartitionbycolor \
-\dataflowchain$ both express grouping by $\dataflowchain$, differing
-only in whether the groups are collapsed or kept. Two queries that
-make opposite choices among such constructs perform the same essential
-computation while manifesting literally different dataflow terms;
-$\query_1$ and $\query_2$ from the running example are exactly such a
-pair. We therefore define pairs of dataflow forms with shared
-semantics to be \emph{alternatives} of one another; the ordering and
-grouping pairs above are two such families, and our implementation
-recognizes further families of the same character. When extracting the
+SQL offers distinct constructs that are not semantically equivalent in
+isolation but can play corresponding roles in equivalent query
+formulations. For example, a comparison
+$\dataflowchain_1 \leq \dataflowchain_2$ and an ordering
+$\sqlorderbycolor$ over the compared dataflows both record sensitivity
+to the order of those values. Likewise, $\sqlgroupbycolor \
+\dataflowchain$ and $\sqlpartitionbycolor \ \dataflowchain$ both
+organize tuples by $\dataflowchain$, although one collapses each group
+and the other retains its rows. Two equivalent queries can therefore
+manifest related computations through literally different dataflow
+terms; $\query_1$ and $\query_2$ from the running example are exactly
+such a pair. We define selected pairs of role-corresponding dataflow
+forms to be \emph{alternatives} of one another. This is a search
+abstraction, not a claim that the underlying SQL constructs are
+interchangeable. The ordering and grouping pairs above are two such
+families, and our implementation recognizes further families of the
+same character. When extracting the
 dataflow set of the input query, the set is closed under alternatives:
 whenever a dataflow is extracted, its alternative forms are added
 alongside it. The closure is applied to the input query's set only.
 Its purpose is to prevent a candidate from being treated as foreign
-merely for expressing the input's computation through a semantically
-equal construct; candidates' own sets are left literal, so the closure
+merely for expressing a corresponding role through a different
+construct; candidates' own sets are left literal, so the closure
 widens what counts as shared without manufacturing shared dataflows
 out of nothing. With the closure in place, $\query_2$'s
 $\sqlpartitionbycolor \ \texttt{scores.gender}$ registers as shared

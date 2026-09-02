@@ -290,7 +290,7 @@ its latency; pairs where both input and output time out are excluded.
 Figure~\ref{slab:fig:leetcode-results}(b) and
 Figure~\ref{slab:fig:calcite-results}(b) report the reduction ratios,
 with geometric means as well as medians and 75th percentiles. On
-LeetCode at 10M, \toolname's mean reduction across all its output
+LeetCode at 10M, \toolname's geometric-mean reduction across all its output
 queries is 50.3x, against 1.4x for $\LR$ and 12x for $\WT$, and its
 lead holds across both workloads and all data sizes. Among the queries
 \toolname covers, the median reduction reaches 1.9x on LeetCode and
@@ -443,7 +443,7 @@ $\wetune$
 \centering
 \setlength{\tabcolsep}{6pt}
 \def\arraystretch{1.5}
-\caption{\small Running time statistics to generate rewrites (in seconds).For $\toolname$, we report the time when an output query (synthesized using 5-second timeout) is found.}
+\caption{\small Running time statistics to generate rewrites (in seconds). For $\toolname$, we report the time when an output query (synthesized using a 5-second timeout) is found.}
 \vspace{-5pt}
 \begin{tabular}{  c | r r | r r  }
 \toprule
@@ -616,9 +616,11 @@ compare production \slabcity against a variant that ranks by true
 measured latency, obtained by running every candidate against the
 database: an impractical oracle, but an informative ceiling.
 Table~\ref{slab:tab:exact-latencies} compares the two in coverage and
-in latency reduction. The oracle is only slightly better on both
-counts: \texttt{EXPLAIN}'s estimates come close enough that the cheap
-proxy is a sound trade.
+in latency reduction. Ranking by exact latency increases coverage,
+substantially so on some LeetCode settings, while the geometric-mean
+latency reductions of the two methods remain broadly comparable and
+neither ranking dominates every setting. Thus \texttt{EXPLAIN}'s
+estimates trade some coverage for much cheaper candidate ranking.
 
 \begin{comment}
     
@@ -734,7 +736,9 @@ list of high-quality rewrites rather than a stream of near-misses; the
 filter applied outward. Second, surviving the two layers is itself
 strong evidence: among \toolname's rewrites that pass, 97\% are
 confirmed correct (by full verification or manual inspection) and only
-3\% are found to be incorrect.
+3\% are found to be incorrect during manual adjudication. Those
+checker-surviving but incorrect rewrites are excluded from the
+optimization counts reported above.
 
 Seen whole, the trade \toolname offers is optimization capability
 against manual assurance overhead: it reaches rewrites that rule-based
