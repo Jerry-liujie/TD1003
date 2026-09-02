@@ -7,7 +7,7 @@
 The systems in this dissertation answer the question they were built
 for: SQL can be rewritten, correctly and profitably, beyond any fixed
 set of rules. The answer opens questions of its own. This chapter
-outlines four directions, in each case starting from something this
+outlines five directions, in each case starting from something this
 dissertation already demonstrates and asking what lies one step
 further.
 
@@ -143,3 +143,62 @@ revenue grows with compute consumed while the service's value grows
 with compute saved, and where optimization ultimately lives, inside
 the warehouse, beside it, or independent of it, will be decided by
 that tension.
+
+
+\section{Verification in the AI Era}
+\label{sec:fw:verification}
+
+The guarantees in this dissertation are bounded by their verifiers:
+full verification reaches 17\% of Chapter~3's rewrites, the most
+stubborn cost in Chapter~4 is the human expert who must sign off where
+the verifier cannot, and Chapter~5's pipeline equivalence rests on
+data-backed evidence rather than proof. Across all three systems the
+pattern is the same: proposing rewrites has become cheap and
+plentiful, while proving them correct remains scarce and expensive.
+Verification is the bottleneck of automated query rewriting.
+
+There is concrete reason to believe this bottleneck will move. AI
+systems reached gold-medal standard at the International Mathematical
+Olympiad in 2025~\cite{luong2025imogold}, and within the past year
+LLM-based theorem provers have produced formal, machine-checked proofs
+at scale and contributed to the resolution of open research problems,
+including longstanding open problems posed by
+Erd\H{o}s~\cite{tsoukalas2026proofsearch}. Proving query equivalence
+is mathematics of a far shallower kind: when the verifiers in this
+dissertation fail, it is rarely because the underlying theorem is
+deep, but because their mechanized semantics do not cover the
+operators involved or their decision procedures time out on formulas a
+human could dispatch with a short argument. The barrier is breadth and
+engineering, and those are what learned systems scale.
+
+The architecture of AI-era verification is already visible in these
+mathematical systems, and it follows the same principle this
+dissertation applied to rewriting: the model proposes, and something
+trustworthy disposes. Equivalence under a mechanized SQL semantics, in
+the style pioneered by \cosette~\cite{chu2017cosette}, is stated as a
+theorem; a language model searches for a proof; and a small trusted
+kernel, a Lean-style proof checker or a solver certificate checker,
+validates the result. A hallucinated proof is then not a wrong verdict
+but a rejected artifact that fails to check, so soundness resides
+entirely in the kernel and the model contributes only search, which is
+precisely what models have become good at. The same models attack the
+coverage gap from the other side: autoformalization, which already
+translates mathematical statements into formal ones with high
+accuracy~\cite{gao2025herald}, can draft the mechanized semantics of
+SQL operators and dialect variations from their documentation and
+reference behavior, each audited once by a human and reused forever,
+so that verifier coverage grows at the pace of a review queue rather
+than a research career.
+
+Equivalence for the full language remains undecidable, and NULL
+semantics, aggregation, and window functions will stay the hard cases;
+no breakthrough repeals that. But if machine-found, machine-checked
+equivalence proofs become the common case, the consequences reach
+every chapter of this dissertation: Chapter~3's label taxonomy
+collapses upward as fully verified becomes the default, the human
+expert of Chapter~4 is consulted about intent rather than equivalence,
+and the reinforcement-learning program of \cref{sec:fw:ai-sql}
+acquires an exact reward signal in place of an approximate one. Given
+the current rate of progress in AI mathematics, a breakthrough within
+the next few years would not be surprising, and a field whose central
+bottleneck sits directly in its path should prepare for it.
